@@ -1,25 +1,48 @@
 "use client";
 
 import Script from "next/script";
+import type { PixelEvents } from "@/lib/pixel-shared";
 
 /**
- * Meta (Facebook) Pixel loader.
+ * Meta (Facebook) Pixel loader — admin panel-চালিত।
  *
- * Setup: শুধু .env ফাইলে আপনার Pixel ID বসান →
- *   NEXT_PUBLIC_FACEBOOK_PIXEL_ID=1234567890123456
- * তারপর dev server restart দিন। ID খালি থাকলে কোনো স্ক্রিপ্ট লোড হবে না।
+ * সেটআপ এখন কোড ছাড়াই হয়: Admin panel → Pixel সেটআপ (/admin/pixel) →
+ * Pixel ID বা Meta এর পুরো কোড পেস্ট করে "সংযোগ করুন" চাপলেই এখান থেকে
+ * স্বয়ংক্রিয়ভাবে লোড হয়। DB-তে কনফিগ না থাকলে .env এর
+ * NEXT_PUBLIC_FACEBOOK_PIXEL_ID fallback হিসেবে থাকে (page.tsx সামলায়)।
  *
- * Auto-tracked: PageView (এই কম্পোনেন্টে)
- * Manual-tracked: InitiateCheckout + Purchase (অর্ডার ফর্মে)
+ * Admin panel-এ যেসব ইভেন্ট চালু করা হয়, শুধু সেগুলোই ফায়ার হয়:
+ * - PageView / ViewContent → এই স্ক্রিপ্টেই (events flag অনুযায়ী)
+ * - InitiateCheckout / Purchase → অর্ডার ফর্মে
+ * - Contact → কল ও WhatsApp বাটনে
+ * window.__PIXEL_EVENTS__ দিয়ে client-side গেটিং হয় (src/lib/pixel.ts)।
  */
-const PIXEL_ID = process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID;
 
-export function FacebookPixel() {
-  if (!PIXEL_ID) return null;
+export function FacebookPixel({
+  pixelId,
+  events,
+  contentName,
+  contentValue,
+}: {
+  pixelId: string;
+  events: PixelEvents;
+  contentName: string;
+  contentValue: number;
+}) {
+  if (!pixelId) return null;
+
+  const eventFlags = JSON.stringify(events);
+  const viewContentData = JSON.stringify({
+    content_name: contentName,
+    content_type: "product",
+    value: contentValue,
+    currency: "BDT",
+  });
 
   return (
     <Script id="meta-pixel" strategy="afterInteractive">
       {`
+window.__PIXEL_EVENTS__ = ${eventFlags};
 !function(f,b,e,v,n,t,s)
 {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
 n.callMethod.apply(n,arguments):n.queue.push(arguments)};
@@ -28,8 +51,13 @@ n.queue=[];t=b.createElement(e);t.async=!0;
 t.src=v;s=b.getElementsByTagName(e)[0];
 s.parentNode.insertBefore(t,s)}(window,document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', '${PIXEL_ID}');
-fbq('track', 'PageView');
+fbq('init', '${pixelId}');
+${events.pageView ? `fbq('track', 'PageView');` : ""}
+${
+  events.viewContent
+    ? `fbq('track', 'ViewContent', ${viewContentData});`
+    : ""
+}
 `}
     </Script>
   );

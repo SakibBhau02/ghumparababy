@@ -13,16 +13,28 @@ import { FAQ } from "@/components/landing/faq";
 import { FinalCTA, Footer } from "@/components/landing/footer";
 import { StickyCTA } from "@/components/landing/sticky-cta";
 import { WhatsAppFloat } from "@/components/landing/whatsapp-float";
+import { FacebookPixel } from "@/components/landing/facebook-pixel";
 import { getDeliveryConfig } from "@/lib/delivery";
+import { getPixelConfig } from "@/lib/pixel-config";
 import type { DeliveryConfig } from "@/lib/delivery-shared";
+import type { PixelConfig } from "@/lib/pixel-shared";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const deliveryConfig: DeliveryConfig = await getDeliveryConfig();
+  const [deliveryConfig, pixelConfig]: [DeliveryConfig, PixelConfig] =
+    await Promise.all([getDeliveryConfig(), getPixelConfig()]);
 
   return (
     <main className="min-h-screen overflow-x-clip">
+      {pixelConfig.enabled && pixelConfig.pixelId ? (
+        <FacebookPixel
+          pixelId={pixelConfig.pixelId}
+          events={pixelConfig.events}
+          contentName="ঘুমপাড়া বেবি সোয়াডেল"
+          contentValue={549}
+        />
+      ) : null}
       <Header />
       {/* Emotional journey: Info → Fear → Relief → Proof → Offer → Action */}
       <Hero deliveryConfig={deliveryConfig} />

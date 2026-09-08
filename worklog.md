@@ -75,3 +75,28 @@ Stage Summary:
 - Current live config: ঢাকার ভিতরে ৳৬০, ঢাকার বাইরে ৳১২০ (admin যেকোনো সময় বদলাতে পারবেন; 0 = ফ্রি)
 - DB clean (test orders removed); Setting table holds delivery_config
 - Structured so a courier API (Pathao/Steadfast) can be plugged into getDeliveryConfig/saveDeliveryConfig layer later
+
+---
+Task ID: 4
+Agent: Super Z (main agent)
+Task: Admin panel-এ Meta Pixel সম্পূর্ণ সেটআপ মডিউল — Pixel ID/পুরো কোড পেস্ট করে সংযোগ + ইভেন্ট চালু-বন্ধ, raw code ছাড়াই (user request: "admin panel থেকেই pixel setup ও event create, raw code এ হাত দেওয়া লাগবে না")।
+
+Work Log:
+- Created src/lib/pixel-shared.ts (client-safe): PixelConfig/PixelEvents types, PIXEL_EVENT_META (৫টি ইভেন্টের বাংলা label+desc), extractPixelId() — plain ID / fbq('init','ID') / quote-ঘেরা ১৫-১৬ ডিজিট auto-detect, sanitizePixelConfig/sanitizePixelEvents
+- Created src/lib/pixel-config.ts (server): getPixelConfig() — প্রায়োরিটি DB (Setting.pixel_config) → .env NEXT_PUBLIC_FACEBOOK_PIXEL_ID fallback → default off; savePixelConfig() upsert
+- New API /api/admin/pixel: GET (config), PUT ({input|pixelId, enabled, events}) — isAdminRequest guard (401 verified), server-side extractPixelId + whitelist sanitization, ID ছাড়া enable → 400
+- Rewrote facebook-pixel.tsx: props-driven (pixelId, events, contentName, contentValue); injects window.__PIXEL_EVENTS__ + conditional fbq('track','PageView'/'ViewContent' {content_name, value: 549, currency BDT})
+- pixel.ts pixelTrack: EVENT_KEY mapping দিয়ে __PIXEL_EVENTS__ gating — বন্ধ ইভেন্ট no-op
+- Pixel mount layout.tsx → page.tsx (Promise.all delivery+pixel config) — admin route-এ pixel আর চলবে না (ডেটা পরিষ্কার)
+- New /admin/pixel (server auth page) + components/admin/pixel-setup.tsx: status banner (connected/সংরক্ষিত-বন্ধ/সংযোগহীন ৩ state), ধাপ ১ textarea (live detection chip: সবুজ ✓ID / লাল error), সংযোগ/বিচ্ছিন্ন/আবার সংযোগ বাটন, ধাপ ২ ৫টি Switch টগল + dirty-state save, ধাপ ৩ Events Manager step-by-step বাংলা গাইড + Pixel Helper টিপ
+- Dashboard header-এ "Pixel সেটআপ" বাটন (Activity icon) → /admin/pixel; pixel page-এ "অর্ডার" back বাটন
+- Contact event যোগ: header hotline (call), WhatsApp float (whatsapp), FinalCTA কল বাটন, footer hotline+WhatsApp — সব pixelTrack("Contact",{method,location}); footer.tsx-এ "use client" যোগ করতে হয়েছিল (server component-এ onClick error)
+- Agent Browser e2e: unauth /admin/pixel → login redirect ✓; admin login → dashboard → Pixel সেটআপ বাটন ✓; পুরো Meta pixel code পেস্ট → ID 1873920456341278 auto-detected ✓; সংযোগ → toast+green banner+5 ইভেন্ট ✓; PageView/ViewContent বন্ধ সেভ → landing script-এ init আছে কিন্তু ওই track নেই + __PIXEL_EVENTS__ flags মিলেছে ✓; fbq spy: WhatsApp ক্লিকে Contact ফায়ার ✓ (enabled), Contact বন্ধে spy [] (blocked) ✓; ফর্মে টাইপ করলে InitiateCheckout ফায়ার ✓; disconnect → landing pixel-clean ✓; আবার সংযোগ (সংরক্ষিত ID) ✓; plain ID ও invalid input detection ✓; disconnect ফ্লো accidental ক্লিকেও verify হয়েছে (stale ref ধরেছিল — লাভ)
+- Screenshot: download/pixel-setup-{desktop,mobile,full,top}.png — mobile hScroll নেই
+- Cleanup: test pixel_config DB থেকে deleted → landing pixel-clean; lint + tsc(src) clean; dev.log শুধু 200
+
+Stage Summary:
+- Admin panel-এ এখন full Meta Pixel manager: /admin/pixel — ID বা পুরো কোড পেস্ট → auto-detect → সংযোগ; ৫টি স্ট্যান্ডার্ড ইভেন্ট (PageView/ViewContent/InitiateCheckout/Purchase/Contact) টগল; সব DB-তে সেভ, কোড/env ছোঁয়া লাগে না
+- Landing page প্রতি request-এ DB config পড়ে (force-dynamic) — সেভ করলেই পরের ভিজিটে কার্যকর
+- .env NEXT_PUBLIC_FACEBOOK_PIXEL_ID fallback হিসেবে আছে (খালি, inert)
+- DB clean (test config removed); delivery config অপরিবর্তিত (৬০/১২০)

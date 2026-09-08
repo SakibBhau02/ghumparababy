@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Countdown } from "./countdown";
 import { HOTLINE, HOTLINE_LINK } from "@/lib/landing-data";
+import { pixelTrack } from "@/lib/pixel";
 import { Phone } from "lucide-react";
 
 export function Header() {
@@ -51,6 +52,7 @@ export function Header() {
           <div className="flex items-center gap-2">
             <a
               href={HOTLINE_LINK}
+              onClick={() => pixelTrack("Contact", { method: "call", location: "header" })}
               className="hidden items-center gap-1.5 text-sm font-medium text-ink md:flex"
             >
               <Phone className="size-4 text-brand" />

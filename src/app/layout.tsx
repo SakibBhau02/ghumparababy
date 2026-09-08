@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Hind_Siliguri } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
-import { FacebookPixel } from "@/components/landing/facebook-pixel";
 
 const hindSiliguri = Hind_Siliguri({
   variable: "--font-hind",
@@ -53,7 +52,6 @@ export default function RootLayout({
       >
         {children}
         <Toaster />
-        <FacebookPixel />
       </body>
     </html>
   );

@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
 import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import {
+  Activity,
   BadgeCheck,
   Clock,
   Package,
@@ -226,6 +227,14 @@ export function AdminDashboard({
             <p className="text-xs text-muted-foreground">অর্ডার ম্যানেজমেন্ট ড্যাশবোর্ড</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push("/admin/pixel")}
+              className="rounded-full"
+            >
+              <Activity className="mr-1.5 size-4" /> Pixel সেটআপ
+            </Button>
             <Button
               variant="outline"
               size="sm"

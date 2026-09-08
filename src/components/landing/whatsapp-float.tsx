@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { WHATSAPP_LINK } from "@/lib/landing-data";
+import { pixelTrack } from "@/lib/pixel";
 
 /** Official WhatsApp glyph (single-color, inherits currentColor) */
 function WhatsAppIcon({ className }: { className?: string }) {
@@ -40,6 +41,7 @@ export function WhatsAppFloat() {
       href={WHATSAPP_LINK}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={() => pixelTrack("Contact", { method: "whatsapp", location: "float" })}
       aria-label="WhatsApp-এ মেসেজ দিন"
       title="WhatsApp-এ মেসেজ দিন"
       className={`group fixed right-4 z-[60] flex items-center gap-2.5 rounded-full bg-[#25D366] p-1 pl-1.5 font-bold text-white shadow-[0_6px_24px_rgba(37,211,102,0.45)] transition-all duration-300 hover:bg-[#1ebe5a] sm:right-6 ${

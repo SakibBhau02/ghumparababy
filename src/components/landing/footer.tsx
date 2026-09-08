@@ -1,4 +1,7 @@
+"use client";
+
 import { HOTLINE, HOTLINE_LINK, WHATSAPP_DISPLAY, WHATSAPP_LINK } from "@/lib/landing-data";
+import { pixelTrack } from "@/lib/pixel";
 import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { ShieldCheck, Truck, BadgeCheck } from "lucide-react";
 
@@ -40,6 +43,7 @@ export function FinalCTA({ deliveryConfig }: { deliveryConfig: DeliveryConfig })
           </a>
           <a
             href={HOTLINE_LINK}
+            onClick={() => pixelTrack("Contact", { method: "call", location: "final_cta" })}
             className="rounded-full border-2 border-white/40 px-8 py-4 text-lg font-bold text-white transition-colors hover:bg-white/10"
           >
             কল করুন: {HOTLINE}
@@ -66,7 +70,11 @@ export function Footer() {
           <div className="text-center text-sm md:text-right">
             <p>
               হেল্পলাইন:{" "}
-              <a href={HOTLINE_LINK} className="font-bold text-white hover:text-honey">
+              <a
+                href={HOTLINE_LINK}
+                onClick={() => pixelTrack("Contact", { method: "call", location: "footer" })}
+                className="font-bold text-white hover:text-honey"
+              >
                 {HOTLINE}
               </a>{" "}
               (সকাল ৯টা — রাত ১০টা)
@@ -77,6 +85,7 @@ export function Footer() {
                 href={WHATSAPP_LINK}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => pixelTrack("Contact", { method: "whatsapp", location: "footer" })}
                 className="font-bold text-white hover:text-honey"
               >
                 {WHATSAPP_DISPLAY}
