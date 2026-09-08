@@ -1,7 +1,8 @@
 import { HOTLINE, HOTLINE_LINK, WHATSAPP_DISPLAY, WHATSAPP_LINK } from "@/lib/landing-data";
+import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { ShieldCheck, Truck, BadgeCheck } from "lucide-react";
 
-export function FinalCTA() {
+export function FinalCTA({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-brand via-brand-deep to-ink py-16 sm:py-20">
       <div className="pointer-events-none absolute inset-0 opacity-20">
@@ -24,7 +25,7 @@ export function FinalCTA() {
             <ShieldCheck className="size-4" /> ক্যাশ অন ডেলিভারি
           </span>
           <span className="flex items-center gap-1.5">
-            <Truck className="size-4" /> ফ্রি ডেলিভারি
+            <Truck className="size-4" /> {isAllFree(deliveryConfig) ? "ফ্রি ডেলিভারি" : "সারা দেশে ডেলিভারি"}
           </span>
           <span className="flex items-center gap-1.5">
             <BadgeCheck className="size-4" /> ৭ দিনের এক্সচেঞ্জ

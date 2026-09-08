@@ -1,41 +1,44 @@
 import { toBn } from "@/lib/landing-data";
+import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { Flame, Check } from "lucide-react";
 import { Countdown } from "./countdown";
 
-const PACKAGE_LIST = [
-  {
-    id: "single",
-    name: "সিঙ্গেল প্যাক",
-    qty: "১টি সোয়াডেল",
-    price: 549,
-    oldPrice: 899,
-    save: 350,
-    tag: null as string | null,
-    perks: ["ফ্রি ডেলিভারি", "ক্যাশ অন ডেলিভারি"],
-  },
-  {
-    id: "combo2",
-    name: "কম্বো প্যাক",
-    qty: "২টি সোয়াডেল",
-    price: 999,
-    oldPrice: 1798,
-    save: 799,
-    tag: "সবচেয়ে জনপ্রিয়",
-    perks: ["২ কালার পছন্দের সুযোগ", "ফ্রি ডেলিভারি", "ক্যাশ অন ডেলিভারি"],
-  },
-  {
-    id: "combo3",
-    name: "ফ্যামিলি প্যাক",
-    qty: "৩টি সোয়াডেল",
-    price: 1399,
-    oldPrice: 2697,
-    save: 1298,
-    tag: "সেরা ভ্যালু",
-    perks: ["৩ কালার পছন্দের সুযোগ", "ফ্রি ডেলিভারি", "ক্যাশ অন ডেলিভারি", "গিফট র‍্যাপ ফ্রি"],
-  },
-];
+export function Pricing({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
+  const deliveryPerk = isAllFree(deliveryConfig) ? "ফ্রি ডেলিভারি" : "সারা দেশে ডেলিভারি";
 
-export function Pricing() {
+  const PACKAGE_LIST = [
+    {
+      id: "single",
+      name: "সিঙ্গেল প্যাক",
+      qty: "১টি সোয়াডেল",
+      price: 549,
+      oldPrice: 899,
+      save: 350,
+      tag: null as string | null,
+      perks: [deliveryPerk, "ক্যাশ অন ডেলিভারি"],
+    },
+    {
+      id: "combo2",
+      name: "কম্বো প্যাক",
+      qty: "২টি সোয়াডেল",
+      price: 999,
+      oldPrice: 1798,
+      save: 799,
+      tag: "সবচেয়ে জনপ্রিয়",
+      perks: ["২ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি"],
+    },
+    {
+      id: "combo3",
+      name: "ফ্যামিলি প্যাক",
+      qty: "৩টি সোয়াডেল",
+      price: 1399,
+      oldPrice: 2697,
+      save: 1298,
+      tag: "সেরা ভ্যালু",
+      perks: ["৩ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি", "গিফট র‍্যাপ ফ্রি"],
+    },
+  ];
+
   return (
     <section className="py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4">

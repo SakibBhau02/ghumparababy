@@ -52,3 +52,26 @@ Stage Summary:
 - Pixel: user only sets NEXT_PUBLIC_FACEBOOK_PIXEL_ID in .env and restarts → PageView/InitiateCheckout/Purchase all live
 - Admin panel live at /admin (login /admin/login) — credentials in .env: admin / Ghumpara@2025 (user should change password via .env)
 - DB clean (test order removed)
+
+---
+Task ID: 3
+Agent: Super Z (main agent)
+Task: Admin panel-এ functional delivery charge feature যোগ করা (fully ready, admin-configurable, order flow integrated).
+
+Work Log:
+- Prisma: Order model-এ deliveryZone/deliveryCharge fields + নতুন Setting (key-value) model → prisma db push (SQLite)
+- Created src/lib/delivery-shared.ts (client-safe: types, zoneCharge, isAllFree, deliveryBadgeText, DEFAULT_DELIVERY_CONFIG 60/120) + src/lib/delivery.ts (server: getDeliveryConfig/saveDeliveryConfig from Setting table)
+- POST /api/orders: zone validation against DB config, server-side charge calc (total = pkg + delivery), stores deliveryZone/deliveryCharge, returns breakdown (productPrice/deliveryCharge/totalPrice); order without zone → 400 Bangla error
+- New /api/admin/settings: GET config + PUT charges (admin-only, clamps 0-999, 401 without session)
+- Landing (all "ফ্রি ডেলিভারি" copy now dynamic from config, passed server-side via async page.tsx force-dynamic): OrderForm zone selector (section ৪, shows charge/free per zone, hidden when all-free), summary/success-card breakdown, grand totals everywhere; Hero, Pricing perks, Solution, FAQ delivery answer (with live charges), FinalCTA badge, StickyCTA badge, layout metadata neutralized
+- Admin dashboard: "ডেলিভারি চার্জ সেটিংস" card (per-zone number inputs + সেভ করুন → PUT, toast, live status note, 0 = free), 6th stat card "ডেলিভারি চার্জ মোট", order cards show zone label + "পণ্য ৳X + ডেলিভারি ৳Y" breakdown
+- Fixed hydration-error false alarm: transient (config changed mid-request during my testing); clean reload shows zero console errors
+- Agent Browser end-to-end: zone UI (৳৬০/৳১২০) → UI order submit → success card breakdown (৯৯৯+৬০=১০৫৯) → DB row verified (zone/charge/total) → no-zone API 400 → admin login → settings visible → ৬০→৮০ save → landing instantly shows ৳৮০ → all-free mode (0/0): selector hidden + "ফ্রি ডেলিভারি" copy restored everywhere + total ৳৯৯৯ → restored 60/120 → settings API 401 without auth → test order deleted
+- Restarted dev server (next dev via bun run dev) to pick up regenerated Prisma client
+- tsc clean (0 src errors), eslint passes
+
+Stage Summary:
+- Delivery charge fully functional end-to-end: admin-এ চার্জ সেভ করলেই অর্ডার ফর্ম, FAQ, সব badge সাথে সাথে আপডেট হয়; server-side price calculation (tamper-proof)
+- Current live config: ঢাকার ভিতরে ৳৬০, ঢাকার বাইরে ৳১২০ (admin যেকোনো সময় বদলাতে পারবেন; 0 = ফ্রি)
+- DB clean (test orders removed); Setting table holds delivery_config
+- Structured so a courier API (Pathao/Steadfast) can be plugged into getDeliveryConfig/saveDeliveryConfig layer later

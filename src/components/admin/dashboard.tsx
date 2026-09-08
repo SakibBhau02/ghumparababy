@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
+import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import {
   BadgeCheck,
   Clock,
@@ -20,7 +21,10 @@ import {
   Phone,
   RefreshCw,
   TrendingUp,
+  Truck,
   Wallet,
+  Save,
+  Settings2,
 } from "lucide-react";
 
 type OrderLike = {
@@ -33,6 +37,8 @@ type OrderLike = {
   packageName: string;
   quantity: number;
   unitPrice: number;
+  deliveryZone: string;
+  deliveryCharge: number;
   totalPrice: number;
   status: string;
   createdAt: string | Date;
@@ -90,10 +96,21 @@ function colorLabel(id: string): string {
   return PRODUCT_COLORS.find((c) => c.id === id)?.label ?? id;
 }
 
-export function AdminDashboard({ initialOrders }: { initialOrders: OrderLike[] }) {
+export function AdminDashboard({
+  initialOrders,
+  deliveryConfig: initialConfig,
+}: {
+  initialOrders: OrderLike[];
+  deliveryConfig: DeliveryConfig;
+}) {
   const router = useRouter();
   const { toast } = useToast();
   const [orders, setOrders] = useState<OrderLike[]>(initialOrders);
+  const [config, setConfig] = useState<DeliveryConfig>(initialConfig);
+  const [chargeInputs, setChargeInputs] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialConfig.zones.map((z) => [z.id, String(z.charge)]))
+  );
+  const [savingSettings, setSavingSettings] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<string>("all");
@@ -108,6 +125,7 @@ export function AdminDashboard({ initialOrders }: { initialOrders: OrderLike[] }
       deliveredRevenue: orders
         .filter((o) => o.status === "delivered")
         .reduce((s, o) => s + o.totalPrice, 0),
+      deliverySum: active.reduce((s, o) => s + o.deliveryCharge, 0),
     };
   }, [orders]);
 
@@ -156,6 +174,40 @@ export function AdminDashboard({ initialOrders }: { initialOrders: OrderLike[] }
     }
   };
 
+  const saveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ charges: chargeInputs }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "সেভ হয়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setConfig(data.config);
+      setChargeInputs(
+        Object.fromEntries(data.config.zones.map((z) => [z.id, String(z.charge)]))
+      );
+      toast({
+        title: "ডেলিভারি চার্জ সেভ হয়েছে",
+        description: isAllFree(data.config)
+          ? "সব এলাকায় এখন ফ্রি ডেলিভারি চালু আছে।"
+          : "ওয়েবসাইটের অর্ডার ফর্মে নতুন চার্জ দেখা যাবে।",
+      });
+    } catch {
+      toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   const logout = async () => {
     await fetch("/api/admin/logout", { method: "POST" });
     router.replace("/admin/login");
@@ -198,7 +250,7 @@ export function AdminDashboard({ initialOrders }: { initialOrders: OrderLike[] }
 
       <div className="mx-auto max-w-6xl px-4">
         {/* Stats */}
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard
             icon={<Package className="size-5 text-brand" />}
             label="মোট অর্ডার"
@@ -229,6 +281,75 @@ export function AdminDashboard({ initialOrders }: { initialOrders: OrderLike[] }
             value={`৳${toBn(stats.deliveredRevenue)}`}
             bg="bg-leaf/10"
           />
+          <StatCard
+            icon={<Truck className="size-5 text-honey" />}
+            label="ডেলিভারি চার্জ মোট"
+            value={`৳${toBn(stats.deliverySum)}`}
+            bg="bg-honey/10"
+          />
+        </div>
+
+        {/* Delivery charge settings */}
+        <div className="mt-6 rounded-2xl border border-honey/40 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Settings2 className="size-5 text-brand" />
+              <div>
+                <h2 className="font-bold text-ink">ডেলিভারি চার্জ সেটিংস</h2>
+                <p className="text-xs text-muted-foreground">
+                  এখানে চার্জ বদলালে ওয়েবসাইটের অর্ডার ফর্মে সাথে সাথে পরিবর্তন হয়ে যাবে। ০ দিলে সেই এলাকায় ফ্রি ডেলিভারি।
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={saveSettings}
+              disabled={savingSettings}
+              className="rounded-full bg-brand font-bold text-white hover:bg-brand-deep disabled:opacity-60"
+            >
+              {savingSettings ? (
+                <>
+                  <RefreshCw className="mr-1.5 size-4 animate-spin" /> সেভ হচ্ছে...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-1.5 size-4" /> সেভ করুন
+                </>
+              )}
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {config.zones.map((z) => (
+              <div key={z.id} className="rounded-xl border border-border bg-cream/50 p-3.5">
+                <label className="text-sm font-semibold text-ink">{z.label}</label>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className="text-sm font-bold text-muted-foreground">৳</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={999}
+                    inputMode="numeric"
+                    value={chargeInputs[z.id] ?? "0"}
+                    onChange={(e) =>
+                      setChargeInputs((cur) => ({ ...cur, [z.id]: e.target.value }))
+                    }
+                    className="h-10 w-full rounded-lg border border-border bg-white px-3 text-base font-bold text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {Number(chargeInputs[z.id]) > 0
+                    ? `অর্ডারে যোগ হবে: ৳${toBn(Number(chargeInputs[z.id]) || 0)}`
+                    : "এই এলাকায় ফ্রি ডেলিভারি"}
+                </p>
+              </div>
+            ))}
+            <div className="rounded-xl border border-dashed border-border bg-cream/30 p-3.5 text-xs leading-relaxed text-muted-foreground">
+              <b className="text-ink">বর্তমানে চালু:</b>{" "}
+              {isAllFree(config)
+                ? "সব এলাকায় ফ্রি ডেলিভারি — অর্ডার ফর্মে এলাকা সিলেক্টর দেখাবে না।"
+                : config.zones.map((z) => `${z.label} ৳${toBn(zoneCharge(config, z.id))}`).join(", ") +
+                  " — অর্ডার ফর্মে এলাকা সিলেক্টর দেখাবে।"}
+            </div>
+          </div>
         </div>
 
         {/* Filter */}
@@ -311,6 +432,13 @@ export function AdminDashboard({ initialOrders }: { initialOrders: OrderLike[] }
                       <div className="text-right">
                         <div className="text-sm text-muted-foreground">
                           {colorLabel(o.color)} • {o.packageName} • {toBn(o.quantity)}টি
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {o.deliveryZone
+                            ? `${config.zones.find((z) => z.id === o.deliveryZone)?.label ?? o.deliveryZone}: `
+                            : ""}
+                          পণ্য ৳{toBn(o.totalPrice - o.deliveryCharge)}
+                          {o.deliveryCharge > 0 ? ` + ডেলিভারি ৳${toBn(o.deliveryCharge)}` : " + ডেলিভারি ফ্রি"}
                         </div>
                         <div className="text-xl font-bold text-brand">৳{toBn(o.totalPrice)}</div>
                       </div>

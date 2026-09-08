@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getDeliveryConfig, zoneCharge } from "@/lib/delivery";
 
 const PACKAGES: Record<string, { label: string; quantity: number; unitPrice: number; totalPrice: number }> = {
   single: { label: "সিঙ্গেল (১টি)", quantity: 1, unitPrice: 549, totalPrice: 549 },
@@ -12,13 +13,14 @@ const COLORS = ["blue", "pink", "red", "beige", "cream", "grey"];
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, phone, address, color, pkg, note } = body as {
+    const { name, phone, address, color, pkg, note, zone } = body as {
       name?: string;
       phone?: string;
       address?: string;
       color?: string;
       pkg?: string;
       note?: string;
+      zone?: string;
     };
 
     // --- Validation ---
@@ -59,7 +61,27 @@ export async function POST(req: NextRequest) {
     }
 
     const selected = PACKAGES[pkg];
-    const totalPrice = selected.totalPrice;
+    const productPrice = selected.totalPrice;
+
+    // --- Delivery charge (server-side source of truth: admin settings) ---
+    const deliveryConfig = await getDeliveryConfig();
+    const needsZone = deliveryConfig.zones.some((z) => z.charge > 0);
+    let deliveryCharge = 0;
+    let deliveryZone = "";
+
+    if (needsZone) {
+      const zoneExists = deliveryConfig.zones.some((z) => z.id === zone);
+      if (!zone || !zoneExists) {
+        return NextResponse.json(
+          { error: "অনুগ্রহ করে ডেলিভারি এলাকা নির্বাচন করুন।" },
+          { status: 400 }
+        );
+      }
+      deliveryZone = zone;
+      deliveryCharge = zoneCharge(deliveryConfig, zone);
+    }
+
+    const totalPrice = productPrice + deliveryCharge;
 
     // Generate a readable order code: GP-YYMMDD-XXXX
     const now = new Date();
@@ -79,6 +101,8 @@ export async function POST(req: NextRequest) {
         packageName: selected.label,
         quantity: selected.quantity,
         unitPrice: selected.unitPrice,
+        deliveryZone,
+        deliveryCharge,
         totalPrice,
         status: "pending",
       },
@@ -87,6 +111,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       orderCode: order.orderCode,
+      productPrice,
+      deliveryCharge,
       totalPrice: order.totalPrice,
       message:
         "আপনার অর্ডার সফলভাবে গ্রহণ করা হয়েছে! আমাদের প্রতিনিধি শীঘ্রই কল করে অর্ডার কনফার্ম করবেন।",

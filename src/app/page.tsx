@@ -13,26 +13,32 @@ import { FAQ } from "@/components/landing/faq";
 import { FinalCTA, Footer } from "@/components/landing/footer";
 import { StickyCTA } from "@/components/landing/sticky-cta";
 import { WhatsAppFloat } from "@/components/landing/whatsapp-float";
+import { getDeliveryConfig } from "@/lib/delivery";
+import type { DeliveryConfig } from "@/lib/delivery-shared";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const deliveryConfig: DeliveryConfig = await getDeliveryConfig();
+
   return (
     <main className="min-h-screen overflow-x-clip">
       <Header />
       {/* Emotional journey: Info → Fear → Relief → Proof → Offer → Action */}
-      <Hero />
+      <Hero deliveryConfig={deliveryConfig} />
       <MoroExplain />
       <StatsSection />
       <SymptomCheck />
-      <Solution />
+      <Solution deliveryConfig={deliveryConfig} />
       <Showcase />
       <HowToUse />
       <Testimonials />
-      <Pricing />
-      <OrderForm />
-      <FAQ />
-      <FinalCTA />
+      <Pricing deliveryConfig={deliveryConfig} />
+      <OrderForm deliveryConfig={deliveryConfig} />
+      <FAQ deliveryConfig={deliveryConfig} />
+      <FinalCTA deliveryConfig={deliveryConfig} />
       <Footer />
-      <StickyCTA />
+      <StickyCTA deliveryConfig={deliveryConfig} />
       <WhatsAppFloat />
     </main>
   );

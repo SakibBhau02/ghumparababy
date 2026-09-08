@@ -11,16 +11,23 @@ datasource db {
 }
 
 model Order {
-  id          String   @id @default(cuid())
-  orderCode   String   @unique
-  name        String
-  phone       String
-  address     String
-  color       String
-  packageName String
-  quantity    Int
-  unitPrice   Int
-  totalPrice  Int
-  status      String   @default("pending")
-  createdAt   DateTime @default(now())
+  id            String   @id @default(cuid())
+  orderCode     String   @unique
+  name          String
+  phone         String
+  address       String
+  color         String
+  packageName   String
+  quantity      Int
+  unitPrice     Int
+  deliveryZone  String   @default("")
+  deliveryCharge Int     @default(0)
+  totalPrice    Int
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+}
+
+model Setting {
+  key   String @id
+  value String
 }

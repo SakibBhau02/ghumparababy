@@ -5,10 +5,19 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { HOTLINE, HOTLINE_LINK } from "@/lib/landing-data";
+import { HOTLINE, HOTLINE_LINK, toBn } from "@/lib/landing-data";
+import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { Phone } from "lucide-react";
 
-const FAQS = [
+export function FAQ({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
+  const free = isAllFree(deliveryConfig);
+  const inside = zoneCharge(deliveryConfig, "inside_dhaka");
+  const outside = zoneCharge(deliveryConfig, "outside_dhaka");
+  const deliveryAnswer = free
+    ? "ঢাকার ভেতরে ১-২ দিন, ঢাকার বাইরে ২-৪ দিন। আমরা সারা বাংলাদেশে (৬৪ জেলা) কুরিয়ারে ফ্রি ডেলিভারি দিই। ডেলিভারির আগে আমাদের প্রতিনিধি কল করে কনফার্ম করবেন।"
+    : `ঢাকার ভেতরে ১-২ দিন, ঢাকার বাইরে ২-৪ দিন। আমরা সারা বাংলাদেশে (৬৪ জেলা) কুরিয়ারে হোম ডেলিভারি দিই — ডেলিভারি চার্জ ঢাকার ভিতরে ৳${toBn(inside)}, ঢাকার বাইরে ৳${toBn(outside)} (পণ্যের দামের সাথে যোগ হবে)। ডেলিভারির আগে আমাদের প্রতিনিধি কল করে কনফার্ম করবেন।`;
+
+  const FAQS = [
   {
     q: "মোরো রিফ্লেক্স কি আমার বাচ্চারও হবে/হয়েছে?",
     a: "হ্যাঁ, মোরো রিফ্লেক্স প্রতিটি সুস্থ নবজাতকেরই স্বাভাবিক প্রতিবর্তন (Cleveland Clinic)। এটি রোগ নয়, বরং মস্তিষ্কের বিকাশের একটি ধাপ। তবে এটি বারবার ঘুম ভাঙায় — তাই একে নিয়ন্ত্রণে রাখাই প্যারেন্টদের কাজ। Swaddling-ই এর সবচেয়ে প্রমাণিত ও সহজ সমাধান।",
@@ -31,7 +40,7 @@ const FAQS = [
   },
   {
     q: "ডেলিভারি পেতে কতদিন লাগবে? ঢাকার বাইরেও পাওয়া যাবে?",
-    a: "ঢাকার ভেতরে ১-২ দিন, ঢাকার বাইরে ২-৪ দিন। আমরা সারা বাংলাদেশে (৬৪ জেলা) কুরিয়ারে ফ্রি ডেলিভারি দিই। ডেলিভারির আগে আমাদের প্রতিনিধি কল করে কনফার্ম করবেন।",
+    a: deliveryAnswer,
   },
   {
     q: "পেমেন্ট কিভাবে করব?",
@@ -41,9 +50,8 @@ const FAQS = [
     q: "সাইজ বা কালার পছন্দ না হলে এক্সচেঞ্জ করা যাবে?",
     a: "হ্যাঁ! ডেলিভারির ৭ দিনের মধ্যে অব্যবহৃত অবস্থায় এক্সচেঞ্জ করা যাবে। হেল্পলাইনে কল করলেই প্রক্রিয়া সম্পন্ন হবে।",
   },
-];
+  ];
 
-export function FAQ() {
   return (
     <section className="bg-secondary/40 py-16 sm:py-20">
       <div className="mx-auto max-w-3xl px-4">

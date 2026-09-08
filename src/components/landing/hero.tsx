@@ -2,9 +2,11 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toBn } from "@/lib/landing-data";
+import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { ShieldCheck, Truck, BadgeCheck, Star, ChevronDown } from "lucide-react";
 
-export function Hero() {
+export function Hero({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
+  const free = isAllFree(deliveryConfig);
   return (
     <section id="top" className="relative overflow-hidden pt-28 sm:pt-32">
       {/* soft background blobs */}
@@ -93,7 +95,7 @@ export function Hero() {
           </div>
 
           <p className="mt-3 text-xs text-muted-foreground">
-            ✓ অগ্রিম পেমেন্ট লাগবে না — পণ্য হাতে পেয়ে টাকা দিন ✓ সারা দেশে ফ্রি ডেলিভারি
+            ✓ অগ্রিম পেমেন্ট লাগবে না — পণ্য হাতে পেয়ে টাকা দিন ✓ {free ? "সারা দেশে ফ্রি ডেলিভারি" : "সারা দেশে হোম ডেলিভারি"}
           </p>
         </div>
 
@@ -139,7 +141,7 @@ export function Hero() {
       <div className="mx-auto mt-6 max-w-6xl px-4">
         <div className="grid grid-cols-2 gap-3 rounded-3xl bg-white p-4 shadow-md sm:grid-cols-4">
           {[
-            { icon: Truck, title: "ফ্রি হোম ডেলিভারি", sub: "সারা বাংলাদেশে" },
+            { icon: Truck, title: free ? "ফ্রি হোম ডেলিভারি" : "হোম ডেলিভারি", sub: "সারা বাংলাদেশে" },
             { icon: ShieldCheck, title: "ক্যাশ অন ডেলিভারি", sub: "হাতে পেয়ে টাকা দিন" },
             { icon: BadgeCheck, title: "১০০% প্রিমিয়াম কোয়ালিটি", sub: "স্কিন-ফ্রেন্ডলি ফ্লিস" },
             { icon: Star, title: "৫,০০০+ ভেরিফাইড রিভিউ", sub: "গড় রেটিং ৪.৯/৫" },

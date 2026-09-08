@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { ShieldCheck, Snowflake, BedDouble, Droplets, Feather, HeartHandshake } from "lucide-react";
 
 const BENEFITS = [
@@ -36,7 +37,7 @@ const BENEFITS = [
   },
 ];
 
-export function Solution() {
+export function Solution({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
   return (
     <section id="solution" className="py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4">
@@ -124,7 +125,7 @@ export function Solution() {
             </Button>
           </a>
           <p className="mt-2 text-sm text-muted-foreground">
-            ৳{549} থেকে শুরু • ক্যাশ অন ডেলিভারি • ফ্রি ডেলিভারি
+            ৳{549} থেকে শুরু • ক্যাশ অন ডেলিভারি • {isAllFree(deliveryConfig) ? "ফ্রি ডেলিভারি" : "সারা দেশে ডেলিভারি"}
           </p>
         </div>
       </div>

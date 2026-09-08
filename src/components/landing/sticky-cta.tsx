@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toBn } from "@/lib/landing-data";
+import { deliveryBadgeText, type DeliveryConfig } from "@/lib/delivery-shared";
 
-export function StickyCTA() {
+export function StickyCTA({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -35,7 +36,7 @@ export function StickyCTA() {
             <span className="text-lg font-bold text-ink">৳{toBn(549)}</span>
             <span className="text-sm text-muted-foreground line-through">৳{toBn(899)}</span>
           </div>
-          <div className="text-xs text-leaf font-medium">✓ ক্যাশ অন ডেলিভারি • ফ্রি ডেলিভারি</div>
+          <div className="text-xs text-leaf font-medium">✓ ক্যাশ অন ডেলিভারি • {deliveryBadgeText(deliveryConfig)}</div>
         </div>
         <a href="#order">
           <Button

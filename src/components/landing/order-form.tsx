@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { PRODUCT_COLORS, toBn, HOTLINE, HOTLINE_LINK } from "@/lib/landing-data";
+import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { pixelTrack } from "@/lib/pixel";
 import { CheckCircle2, Loader2, Phone, ShieldCheck, Truck, ShoppingBag } from "lucide-react";
 
@@ -17,18 +18,28 @@ const PACKAGE_OPTIONS = [
   { id: "combo3", name: "ফ্যামিলি প্যাক (৩টি)", price: 1399, unit: "৳৪৬৬/পিস — সেরা ভ্যালু" },
 ];
 
-export function OrderForm() {
+export function OrderForm({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
   const { toast } = useToast();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [color, setColor] = useState<string>("pink");
   const [pkg, setPkg] = useState<string>("combo2");
+  const [zone, setZone] = useState<string>(deliveryConfig.zones[0]?.id ?? "");
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState<{ orderCode: string; totalPrice: number } | null>(null);
+  const [success, setSuccess] = useState<{
+    orderCode: string;
+    productPrice: number;
+    deliveryCharge: number;
+    totalPrice: number;
+  } | null>(null);
 
   const selectedPkg = PACKAGE_OPTIONS.find((p) => p.id === pkg)!;
   const selectedColor = PRODUCT_COLORS.find((c) => c.id === color)!;
+
+  const zoneNeeded = !isAllFree(deliveryConfig);
+  const currentCharge = zoneNeeded ? zoneCharge(deliveryConfig, zone) : 0;
+  const grandTotal = selectedPkg.price + currentCharge;
 
   // Meta Pixel: InitiateCheckout fires once, on the user's first interaction with the order form
   const initiated = useRef(false);
@@ -36,7 +47,7 @@ export function OrderForm() {
     if (initiated.current) return;
     initiated.current = true;
     pixelTrack("InitiateCheckout", {
-      value: price ?? selectedPkg.price,
+      value: (price ?? selectedPkg.price) + currentCharge,
       currency: "BDT",
       content_name: "ঘুমপাড়া বেবি সোয়াডেল",
     });
@@ -49,7 +60,7 @@ export function OrderForm() {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone, address, color, pkg }),
+        body: JSON.stringify({ name, phone, address, color, pkg, zone }),
       });
       const data = await res.json();
 
@@ -62,7 +73,12 @@ export function OrderForm() {
         return;
       }
 
-      setSuccess({ orderCode: data.orderCode, totalPrice: data.totalPrice });
+      setSuccess({
+        orderCode: data.orderCode,
+        productPrice: data.productPrice,
+        deliveryCharge: data.deliveryCharge,
+        totalPrice: data.totalPrice,
+      });
       // Meta Pixel: Purchase (COD order placed)
       pixelTrack("Purchase", {
         value: data.totalPrice,
@@ -120,10 +136,22 @@ export function OrderForm() {
               আপনার অর্ডার কোড:{" "}
               <span className="font-bold text-brand">{success.orderCode}</span>
             </p>
-            <p className="mt-1 text-muted-foreground">
-              মোট মূল্য: <span className="font-bold text-ink">৳{toBn(success.totalPrice)}</span>{" "}
-              (ডেলিভারি ফ্রি)
-            </p>
+            <div className="mt-3 rounded-2xl bg-cream p-4 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">পণ্যের মূল্য</span>
+                <span className="font-semibold text-ink">৳{toBn(success.productPrice)}</span>
+              </div>
+              <div className="mt-1 flex justify-between">
+                <span className="text-muted-foreground">ডেলিভারি চার্জ</span>
+                <span className={`font-semibold ${success.deliveryCharge > 0 ? "text-ink" : "text-leaf"}`}>
+                  {success.deliveryCharge > 0 ? `৳${toBn(success.deliveryCharge)}` : "ফ্রি!"}
+                </span>
+              </div>
+              <div className="mt-2 flex justify-between border-t border-border pt-2">
+                <span className="font-bold text-ink">সর্বমোট (ক্যাশ অন ডেলিভারি)</span>
+                <span className="font-bold text-brand">৳{toBn(success.totalPrice)}</span>
+              </div>
+            </div>
             <p className="mt-4 rounded-2xl bg-leaf/10 p-4 text-sm text-ink">
               আমাদের প্রতিনিধি ২৪ ঘণ্টার মধ্যে কল করে অর্ডার কনফার্ম করবেন। পণ্য হাতে পেয়ে টাকা
               দিন। যেকোনো প্রশ্নে কল করুন:{" "}
@@ -278,6 +306,41 @@ export function OrderForm() {
                     </div>
                   </div>
 
+                  {/* Delivery zone selection (only when charges apply) */}
+                  {zoneNeeded && (
+                    <div>
+                      <Label className="text-base font-bold text-ink">৪. ডেলিভারি এলাকা নির্বাচন করুন</Label>
+                      <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+                        {deliveryConfig.zones.map((z) => (
+                          <button
+                            key={z.id}
+                            type="button"
+                            onClick={() => {
+                              setZone(z.id);
+                              fireInitiate();
+                            }}
+                            aria-pressed={zone === z.id}
+                            className={`flex items-center justify-between rounded-2xl border-2 p-3.5 text-left transition-all ${
+                              zone === z.id
+                                ? "border-brand bg-brand-soft/60"
+                                : "border-border hover:border-honey/50"
+                            }`}
+                          >
+                            <span className="text-sm font-bold text-ink">{z.label}</span>
+                            <span
+                              className={`text-sm font-bold ${z.charge > 0 ? "text-brand" : "text-leaf"}`}
+                            >
+                              {z.charge > 0 ? `৳${toBn(z.charge)}` : "ফ্রি"}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        ডেলিভারি চার্জ পণ্যের দামের সাথে যোগ হবে — হাতে পেয়ে কুরিয়ার প্রতিনিধিকে মোট টাকা দিন।
+                      </p>
+                    </div>
+                  )}
+
                   {/* Summary */}
                   <div className="rounded-2xl bg-cream p-4">
                     <div className="flex justify-between text-sm">
@@ -288,11 +351,13 @@ export function OrderForm() {
                     </div>
                     <div className="mt-1 flex justify-between text-sm">
                       <span className="text-muted-foreground">ডেলিভারি চার্জ</span>
-                      <span className="font-semibold text-leaf">ফ্রি!</span>
+                      <span className={`font-semibold ${currentCharge > 0 ? "text-ink" : "text-leaf"}`}>
+                        {currentCharge > 0 ? `৳${toBn(currentCharge)}` : "ফ্রি!"}
+                      </span>
                     </div>
                     <div className="mt-2 flex justify-between border-t border-border pt-2 text-base">
                       <span className="font-bold text-ink">সর্বমোট</span>
-                      <span className="font-bold text-brand">৳{toBn(selectedPkg.price)}</span>
+                      <span className="font-bold text-brand">৳{toBn(grandTotal)}</span>
                     </div>
                   </div>
 
@@ -306,7 +371,7 @@ export function OrderForm() {
                         <Loader2 className="mr-2 size-5 animate-spin" /> অর্ডার প্রসেস হচ্ছে...
                       </>
                     ) : (
-                      "অর্ডার কনফার্ম করুন — ৳" + toBn(selectedPkg.price)
+                      "অর্ডার কনফার্ম করুন — ৳" + toBn(grandTotal)
                     )}
                   </Button>
 
@@ -315,7 +380,7 @@ export function OrderForm() {
                       <ShieldCheck className="size-3.5 text-leaf" /> ১০০% নিরাপদ অর্ডার
                     </span>
                     <span className="flex items-center gap-1">
-                      <Truck className="size-3.5 text-leaf" /> ফ্রি ডেলিভারি সারা দেশে
+                      <Truck className="size-3.5 text-leaf" /> {isAllFree(deliveryConfig) ? "ফ্রি ডেলিভারি সারা দেশে" : "সারা দেশে হোম ডেলিভারি"}
                     </span>
                     <span className="flex items-center gap-1">
                       <Phone className="size-3.5 text-leaf" /> হেল্পলাইন: {HOTLINE}
