@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { PRODUCT_COLORS, toBn, HOTLINE, HOTLINE_LINK } from "@/lib/landing-data";
+import { pixelTrack } from "@/lib/pixel";
 import { CheckCircle2, Loader2, Phone, ShieldCheck, Truck, ShoppingBag } from "lucide-react";
 
 const PACKAGE_OPTIONS = [
@@ -28,6 +29,18 @@ export function OrderForm() {
 
   const selectedPkg = PACKAGE_OPTIONS.find((p) => p.id === pkg)!;
   const selectedColor = PRODUCT_COLORS.find((c) => c.id === color)!;
+
+  // Meta Pixel: InitiateCheckout fires once, on the user's first interaction with the order form
+  const initiated = useRef(false);
+  const fireInitiate = (price?: number) => {
+    if (initiated.current) return;
+    initiated.current = true;
+    pixelTrack("InitiateCheckout", {
+      value: price ?? selectedPkg.price,
+      currency: "BDT",
+      content_name: "ঘুমপাড়া বেবি সোয়াডেল",
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +63,13 @@ export function OrderForm() {
       }
 
       setSuccess({ orderCode: data.orderCode, totalPrice: data.totalPrice });
+      // Meta Pixel: Purchase (COD order placed)
+      pixelTrack("Purchase", {
+        value: data.totalPrice,
+        currency: "BDT",
+        content_name: "ঘুমপাড়া বেবি সোয়াডেল",
+        order_id: data.orderCode,
+      });
       toast({
         title: "🎉 অর্ডার সফল হয়েছে!",
         description: "আমাদের প্রতিনিধি শীঘ্রই কল করে কনফার্ম করবেন।",
@@ -150,7 +170,10 @@ export function OrderForm() {
                         <button
                           key={p.id}
                           type="button"
-                          onClick={() => setPkg(p.id)}
+                          onClick={() => {
+                            setPkg(p.id);
+                            fireInitiate(p.price);
+                          }}
                           aria-pressed={pkg === p.id}
                           className={`rounded-2xl border-2 p-3.5 text-left transition-all ${
                             pkg === p.id
@@ -178,7 +201,10 @@ export function OrderForm() {
                         <button
                           key={c.id}
                           type="button"
-                          onClick={() => setColor(c.id)}
+                          onClick={() => {
+                            setColor(c.id);
+                            fireInitiate();
+                          }}
                           aria-pressed={color === c.id}
                           aria-label={c.label}
                           className={`group flex flex-col items-center gap-1 rounded-xl border-2 p-1.5 transition-all ${
@@ -206,7 +232,10 @@ export function OrderForm() {
                       <Input
                         id="name"
                         value={name}
-                        onChange={(e) => setName(e.target.value)}
+                        onChange={(e) => {
+                          setName(e.target.value);
+                          fireInitiate();
+                        }}
                         placeholder="যেমন: আয়েশা সিদ্দিকা"
                         required
                         className="mt-1.5 h-12 rounded-xl border-border bg-cream/60 focus-visible:ring-brand"
@@ -221,7 +250,10 @@ export function OrderForm() {
                         type="tel"
                         inputMode="numeric"
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
+                        onChange={(e) => {
+                          setPhone(e.target.value);
+                          fireInitiate();
+                        }}
                         placeholder="01XXXXXXXXX"
                         required
                         className="mt-1.5 h-12 rounded-xl border-border bg-cream/60 focus-visible:ring-brand"
@@ -234,7 +266,10 @@ export function OrderForm() {
                       <Textarea
                         id="address"
                         value={address}
-                        onChange={(e) => setAddress(e.target.value)}
+                        onChange={(e) => {
+                          setAddress(e.target.value);
+                          fireInitiate();
+                        }}
                         placeholder="বাসা/হোল্ডিং, রোড, এলাকা, থানা, জেলা"
                         required
                         rows={2}

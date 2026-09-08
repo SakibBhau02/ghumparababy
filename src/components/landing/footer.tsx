@@ -1,4 +1,4 @@
-import { HOTLINE, HOTLINE_LINK } from "@/lib/landing-data";
+import { HOTLINE, HOTLINE_LINK, WHATSAPP_DISPLAY, WHATSAPP_LINK } from "@/lib/landing-data";
 import { ShieldCheck, Truck, BadgeCheck } from "lucide-react";
 
 export function FinalCTA() {
@@ -71,7 +71,16 @@ export function Footer() {
               (সকাল ৯টা — রাত ১০টা)
             </p>
             <p className="mt-1">
-              ইমেইল: hello@ghumpara.com.bd • ফেসবুক: @ghumparababy
+              WhatsApp:{" "}
+              <a
+                href={WHATSAPP_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-bold text-white hover:text-honey"
+              >
+                {WHATSAPP_DISPLAY}
+              </a>{" "}
+              • ফেসবুক: @ghumparababy
             </p>
           </div>
         </div>

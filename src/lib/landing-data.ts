@@ -1,5 +1,14 @@
-export const HOTLINE = "01850-123456";
-export const HOTLINE_LINK = "tel:+8801850123456";
+export const HOTLINE = "01713-510047";
+export const HOTLINE_LINK = "tel:+8801713510047";
+
+// WhatsApp (same number, international format without +)
+export const WHATSAPP_NUMBER = "8801713510047";
+export const WHATSAPP_DISPLAY = "01713-510047";
+export const WHATSAPP_MESSAGE =
+  "আসসালামু আলাইকুম! আমি ঘুমপাড়া বেবি সোয়াডেল সম্পর্কে জানতে চাই।";
+export const WHATSAPP_LINK = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+  WHATSAPP_MESSAGE
+)}`;
 
 export const PRODUCT_COLORS = [
   { id: "blue", label: "আকাশি", hex: "#8FAFD4", image: "/images/swaddle-blue.jpg" },

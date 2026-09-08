@@ -12,6 +12,7 @@ import { OrderForm } from "@/components/landing/order-form";
 import { FAQ } from "@/components/landing/faq";
 import { FinalCTA, Footer } from "@/components/landing/footer";
 import { StickyCTA } from "@/components/landing/sticky-cta";
+import { WhatsAppFloat } from "@/components/landing/whatsapp-float";
 
 export default function Home() {
   return (
@@ -32,6 +33,7 @@ export default function Home() {
       <FinalCTA />
       <Footer />
       <StickyCTA />
+      <WhatsAppFloat />
     </main>
   );
 }

@@ -31,3 +31,24 @@ Stage Summary:
 - 3 test orders verified end-to-end then cleaned
 - All product images from user upload integrated (hero, showcase gallery, order form preview)
 - Pending user customization: hotline number 01850-123456, email hello@ghumpara.com.bd, Facebook @ghumparababy are demo values
+
+---
+Task ID: 2
+Agent: Super Z (main agent)
+Task: Pixel setup environment ready; change phone number to 01713510047; always-visible floating WhatsApp button (fully working wa.me); build admin panel and provide username/password.
+
+Work Log:
+- Changed HOTLINE to 01713-510047 (tel:+8801713510047) in src/lib/landing-data.ts — all header/footer/FAQ/order-form links update automatically (verified via DOM query: 4 tel links all new number)
+- Added WhatsApp constants (WHATSAPP_NUMBER=8801713510047, WHATSAPP_LINK with pre-filled Bangla message) in landing-data.ts
+- Created src/components/landing/whatsapp-float.tsx: always-visible bottom-right floating WhatsApp button (official glyph SVG, #25D366, ping animation, label on sm+); shares sticky-CTA visibility logic so it smoothly shifts above the mobile sticky bar (bottom-24 when CTA visible, bottom-5 otherwise); wired into page.tsx; added WhatsApp link in footer contact
+- Meta Pixel env ready: NEXT_PUBLIC_FACEBOOK_PIXEL_ID added to .env (empty = inert); created src/components/landing/facebook-pixel.tsx (next/script afterInteractive, loads fbevents.js + PageView only when ID set) mounted in layout.tsx; created src/lib/pixel.ts safe track helper; wired InitiateCheckout (first form interaction, BDT value) and Purchase (order success, value+order_id) events in order-form.tsx
+- Built admin panel: src/lib/admin-auth.ts (HMAC-signed 7-day session cookie, timing-safe compares); /api/admin/login, /api/admin/logout, /api/admin/orders (GET list+stats via PATCH status whitelist pending/confirmed/shipped/delivered/cancelled); /admin server page (cookie verify → redirect /admin/login) + /admin/login client form (Bangla); src/components/admin/dashboard.tsx (5 stat cards, status filter chips, order cards with tel:+88 & wa.me/88 customer links, status Select with optimistic update + toast, refresh, logout)
+- Added ADMIN_USERNAME=admin, ADMIN_PASSWORD=Ghumpara@2025, ADMIN_SECRET (random 64-hex) to .env
+- Agent Browser verification: landing tel links = 01713-510047; WhatsApp float href = wa.me/8801713510047?text=<bangla msg>, visible in corner (desktop 1440px + mobile 390px, shifts above sticky bar on scroll); /admin redirects to login; wrong password → Bangla error; correct creds → dashboard; test order created via API → dashboard shows order card, stats (৳৯৯৯), status changed pending→confirmed with toast; test order deleted from DB afterwards
+- tsc --noEmit clean for src/, eslint passes
+
+Stage Summary:
+- Phone/WhatsApp unified on 01713510047 (site-wide + floating always-visible WhatsApp button, fully ready wa.me chat)
+- Pixel: user only sets NEXT_PUBLIC_FACEBOOK_PIXEL_ID in .env and restarts → PageView/InitiateCheckout/Purchase all live
+- Admin panel live at /admin (login /admin/login) — credentials in .env: admin / Ghumpara@2025 (user should change password via .env)
+- DB clean (test order removed)
