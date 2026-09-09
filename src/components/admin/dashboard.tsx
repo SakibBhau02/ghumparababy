@@ -17,6 +17,7 @@ import {
   Activity,
   BadgeCheck,
   Clock,
+  Download,
   Package,
   LogOut,
   Phone,
@@ -226,7 +227,7 @@ export function AdminDashboard({
             </h1>
             <p className="text-xs text-muted-foreground">অর্ডার ম্যানেজমেন্ট ড্যাশবোর্ড</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -235,6 +236,11 @@ export function AdminDashboard({
             >
               <Activity className="mr-1.5 size-4" /> Pixel সেটআপ
             </Button>
+            <a href="/api/admin/orders/export" download>
+              <Button variant="outline" size="sm" className="rounded-full">
+                <Download className="mr-1.5 size-4" /> CSV
+              </Button>
+            </a>
             <Button
               variant="outline"
               size="sm"

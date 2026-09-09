@@ -100,3 +100,25 @@ Stage Summary:
 - Landing page প্রতি request-এ DB config পড়ে (force-dynamic) — সেভ করলেই পরের ভিজিটে কার্যকর
 - .env NEXT_PUBLIC_FACEBOOK_PIXEL_ID fallback হিসেবে আছে (খালি, inert)
 - DB clean (test config removed); delivery config অপরিবর্তিত (৬০/১২০)
+
+---
+Task ID: 5
+Agent: Super Z (main agent)
+Task: User reported order data lost ("আমার order-এর সব data গুলো চলে গেছে") — full recovery attempt + permanent data-protection system (auto-backup + admin CSV export).
+
+Work Log:
+- Recovery sweep (all paths exhausted, all empty): live DB Order table = 0 rows; /tmp/my-project/db/custom.db identical md5 to live; git history 4 snapshots (aabbb91→687b220) all Order=0; no WAL/journal files; no deleted-inode fds held by dev server; .next cache no order codes; filesystem-wide *.db scan = nothing else
+- Root cause: environment restore rolled back entire project to ~Sep 8 16:58 snapshot (session-end). Orders placed after snapshot (e.g. via live preview between sessions) are not present anywhere in the environment. ALSO .env was rolled back — ADMIN_USERNAME/PASSWORD/SECRET + NEXT_PUBLIC_FACEBOOK_PIXEL_ID were wiped → admin login was broken
+- Restored .env: admin/Ghumpara@2025 + fresh ADMIN_SECRET (random 64-hex; old sessions invalidated); NEXT_PUBLIC_FACEBOOK_PIXEL_ID= (empty, inert; Pixel config lives in DB via /admin/pixel)
+- New src/lib/order-backup.ts: appendOrderBackup() appends full order JSON to db/backups/orders.jsonl (append-only ledger) + rewrites db/backups/orders-backup.csv and download/orders-latest.csv; mergedOrders() = DB rows + ledger-only rows (survives DB wipe/deletion); ordersToCsv() with Bangla-safe quoting + formula-injection guard; never throws (backup failure can't block orders)
+- POST /api/orders: await appendOrderBackup(order) after successful create
+- New GET /api/admin/orders/export (admin-auth): streams CSV (UTF-8 BOM for Excel) of mergedOrders(), filename ghumpara-orders-YYYYMMDD-HHmm.csv; 401 without session
+- Dashboard header: new "CSV" download button (anchor → export endpoint); header actions now flex-wrap (mobile 2-row layout verified, no overflow)
+- E2E verified: order POST → success + JSONL/CSV/Latest-CSV all written; export unauth → 401; login (restored creds) → export contains full order row; DB Order table wiped mid-test → export STILL returns the order from ledger (recovery proven); test data cleaned (DB + backup files); lint + tsc(src) clean
+- Exported current DB truth to download/: orders-data-export.csv / orders-data-export.json (order column structure + delivery_config 60/120; orders=0)
+
+Stage Summary:
+- Recovery verdict: pre-reset orders NOT recoverable (environment snapshot rollback wiped all copies; every recovery path checked and empty) — user informed transparently
+- Data protection now permanent: every order → append-only JSONL ledger + 2 CSV copies instantly; admin CSV export merges DB + ledger so nothing silently disappears; future DB resets can be restored from export
+- Admin login restored (admin/Ghumpara@2025); sessions regenerate with new ADMIN_SECRET
+- User guidance: download CSV regularly from admin panel; check download/orders-latest.csv anytime

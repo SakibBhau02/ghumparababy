@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getDeliveryConfig, zoneCharge } from "@/lib/delivery";
+import { appendOrderBackup } from "@/lib/order-backup";
 
 const PACKAGES: Record<string, { label: string; quantity: number; unitPrice: number; totalPrice: number }> = {
   single: { label: "সিঙ্গেল (১টি)", quantity: 1, unitPrice: 549, totalPrice: 549 },
@@ -107,6 +108,9 @@ export async function POST(req: NextRequest) {
         status: "pending",
       },
     });
+
+    // Durable backup (append-only ledger + CSV copies) — never blocks the order
+    await appendOrderBackup(order);
 
     return NextResponse.json({
       success: true,

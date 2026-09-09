@@ -1,0 +1,26 @@
+{
+  "exported_at": "2026-09-09",
+  "order_columns": [
+    "id",
+    "orderCode",
+    "name",
+    "phone",
+    "address",
+    "color",
+    "packageName",
+    "quantity",
+    "unitPrice",
+    "deliveryZone",
+    "deliveryCharge",
+    "totalPrice",
+    "status",
+    "createdAt"
+  ],
+  "orders": [],
+  "settings": [
+    {
+      "key": "delivery_config",
+      "value": "{\"zones\":[{\"id\":\"inside_dhaka\",\"label\":\"ঢাকার ভিতরে\",\"charge\":60},{\"id\":\"outside_dhaka\",\"label\":\"ঢাকার বাইরে\",\"charge\":120}]}"
+    }
+  ]
+}
