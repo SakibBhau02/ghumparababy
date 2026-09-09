@@ -13,14 +13,21 @@ export async function POST(req: NextRequest) {
       password?: string;
     };
 
-    const validUser = process.env.ADMIN_USERNAME ?? "admin";
-    const validPass = process.env.ADMIN_PASSWORD ?? "";
+    const validUser = (process.env.ADMIN_USERNAME ?? "admin").trim();
+    const validPass = (process.env.ADMIN_PASSWORD ?? "").trim();
+
+    // Server misconfiguration (env missing on Vercel etc.) — visible in runtime logs
+    if (!validPass) {
+      console.error(
+        "ADMIN LOGIN MISCONFIGURED: ADMIN_PASSWORD is empty. Set it in Vercel → Project → Settings → Environment Variables, then redeploy."
+      );
+    }
 
     if (
       !username ||
       !password ||
-      !safeEqual(username, validUser) ||
-      !safeEqual(password, validPass)
+      !safeEqual(username.trim(), validUser) ||
+      !safeEqual(password.trim(), validPass)
     ) {
       return NextResponse.json(
         { error: "ভুল ইউজারনেম বা পাসওয়ার্ড।" },
