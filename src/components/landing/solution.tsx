@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import type { ProductConfig } from "@/lib/product-shared";
+import { priceForQty } from "@/lib/product-shared";
 import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { ShieldCheck, Snowflake, BedDouble, Droplets, Feather, HeartHandshake } from "lucide-react";
 
@@ -45,7 +46,7 @@ export function Solution({
   deliveryConfig: DeliveryConfig;
   productConfig: ProductConfig;
 }) {
-  const singlePrice = productConfig.packages.find((p) => p.id === "single")?.price ?? 549;
+  const singlePrice = priceForQty(productConfig, 1).total;
   return (
     <section id="solution" className="py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4">

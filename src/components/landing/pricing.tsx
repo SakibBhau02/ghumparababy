@@ -1,6 +1,6 @@
 import { toBn } from "@/lib/landing-data";
 import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
-import { PACKAGE_META, type ProductConfig } from "@/lib/product-shared";
+import { PACKAGE_META, priceForQty, type ProductConfig } from "@/lib/product-shared";
 import { Flame, Check } from "lucide-react";
 import { Countdown } from "./countdown";
 
@@ -15,29 +15,27 @@ export function Pricing({
 
   const PACKAGE_LIST = productConfig.packages.map((p) => {
     const meta = PACKAGE_META[p.id];
+    const tier = priceForQty(productConfig, meta.quantity);
     return {
       id: p.id,
       name: meta.priceName,
       qty: meta.qtyLabel,
-      price: p.price,
+      price: tier.total,
+      perPiece: tier.perPiece,
       oldPrice: p.oldPrice,
-      save: Math.max(p.oldPrice - p.price, 0),
+      save: Math.max(p.oldPrice - tier.total, 0),
       tag:
         p.id === "combo2"
           ? "সবচেয়ে জনপ্রিয়"
           : p.id === "combo3"
             ? "সেরা ভ্যালু"
-            : p.id === "custom"
-              ? "পছন্দমতো"
-              : null,
+            : null,
       perks:
         p.id === "single"
           ? [deliveryPerk, "ক্যাশ অন ডেলিভারি"]
           : p.id === "combo2"
             ? ["২ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি"]
-            : p.id === "combo3"
-              ? ["৩ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি", "গিফট র‍্যাপ ফ্রি"]
-              : ["পছন্দমতো সংখ্যা ও কালার", deliveryPerk, "ক্যাশ অন ডেলিভারি"],
+            : ["৩ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি", "গিফট র‍্যাপ ফ্রি"],
     };
   });
 
@@ -56,7 +54,7 @@ export function Pricing({
           </div>
         </div>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-10 grid gap-5 md:grid-cols-3">
           {PACKAGE_LIST.map((pkg) => (
             <div
               key={pkg.id}
@@ -75,7 +73,7 @@ export function Pricing({
               )}
 
               <h3 className="text-xl font-bold text-ink">{pkg.name}</h3>
-              <div className="mt-1 text-sm text-muted-foreground">{pkg.qty}</div>
+              <div className="mt-1 text-sm text-muted-foreground">{pkg.qty} • ৳{toBn(pkg.perPiece)}/পিস</div>
 
               <div className="mt-4 flex items-baseline gap-2">
                 <span className={`text-4xl font-bold ${pkg.id === "combo2" ? "text-brand" : "text-ink"}`}>
@@ -112,7 +110,7 @@ export function Pricing({
 
         <p className="mx-auto mt-8 max-w-xl rounded-2xl bg-honey/10 border border-honey/30 p-4 text-center text-sm text-ink">
           💡 <b>মায়েদের পরামর্শ:</b> প্রতিদিন ব্যবহার ও ধোয়ার জন্য কমপক্ষে ২টি নেওয়াই স্মার্ট —
-          কম্বো প্যাকে প্রতি পিসের দাম আরো কম!
+          যত বেশি নেবেন, প্রতি পিস তত সস্তা! ৩+ পিসে ডেলিভারি সম্পূর্ণ ফ্রি।
         </p>
       </div>
     </section>

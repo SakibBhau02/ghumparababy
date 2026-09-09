@@ -28,7 +28,12 @@ export async function getDeliveryConfig(): Promise<DeliveryConfig> {
     // Sanitize: keep known shape only
     const zones = parsed.zones
       .filter((z) => z && typeof z.id === "string" && typeof z.label === "string")
-      .map((z) => ({ id: z.id, label: z.label, charge: Number(z.charge) || 0 }));
+      .map((z) => ({
+        id: z.id,
+        label: z.label,
+        charge: Number(z.charge) || 0,
+        note: typeof z.note === "string" ? z.note.trim().slice(0, 140) : "",
+      }));
     return zones.length === 0 ? DEFAULT_DELIVERY_CONFIG : { zones };
   } catch {
     return DEFAULT_DELIVERY_CONFIG;

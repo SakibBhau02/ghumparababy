@@ -19,6 +19,10 @@ export type PixelConfig = {
   pixelId: string;
   enabled: boolean;
   events: PixelEvents;
+  /** Meta Conversions API access token (server-side Purchase). Empty = browser pixel only. */
+  capiToken: string;
+  /** Optional Meta Test Events code — events go to Test Events tab, not live. Clear for live. */
+  testEventCode: string;
 };
 
 export const PIXEL_EVENT_IDS: PixelEventId[] = [
@@ -73,6 +77,8 @@ export const DEFAULT_PIXEL_CONFIG: PixelConfig = {
   pixelId: "",
   enabled: false,
   events: DEFAULT_PIXEL_EVENTS,
+  capiToken: "",
+  testEventCode: "",
 };
 
 /**
@@ -121,9 +127,18 @@ export function sanitizePixelConfig(raw: unknown): PixelConfig {
     typeof src.pixelId === "string" && /^\d{15,16}$/.test(src.pixelId.trim())
       ? src.pixelId.trim()
       : "";
+  const capped = (v: unknown, max: number): string =>
+    typeof v === "string" ? v.trim().slice(0, max) : "";
   return {
     pixelId,
     enabled: pixelId !== "" && src.enabled === true,
     events: sanitizePixelEvents(src.events),
+    capiToken: capped(src.capiToken, 500),
+    testEventCode: capped(src.testEventCode, 64),
   };
+}
+
+/** Server-side Purchase পাঠানো যাবে? (pixel on + token present) */
+export function isCapiReady(config: PixelConfig): boolean {
+  return config.enabled && config.pixelId !== "" && config.capiToken !== "";
 }

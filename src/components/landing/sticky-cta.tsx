@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toBn } from "@/lib/landing-data";
 import type { ProductConfig } from "@/lib/product-shared";
+import { priceForQty } from "@/lib/product-shared";
 import { deliveryBadgeText, type DeliveryConfig } from "@/lib/delivery-shared";
 
 export function StickyCTA({
@@ -13,7 +14,7 @@ export function StickyCTA({
   deliveryConfig: DeliveryConfig;
   productConfig: ProductConfig;
 }) {
-  const singlePrice = productConfig.packages.find((p) => p.id === "single")?.price ?? 549;
+  const singlePrice = priceForQty(productConfig, 1).total;
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {

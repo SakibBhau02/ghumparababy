@@ -14,14 +14,17 @@ import { useToast } from "@/hooks/use-toast";
 import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
 import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import {
+  DEFAULT_TIERS,
   PACKAGE_META,
-  perPiecePrice,
+  priceForQty,
   type ProductConfig,
 } from "@/lib/product-shared";
 import {
   TEMPLATE_SLOT_LEGEND,
   type WhatsappConfig,
 } from "@/lib/whatsapp-shared";
+import { type TelegramConfig } from "@/lib/telegram-shared";
+import { type SteadfastConfig } from "@/lib/steadfast-shared";
 import { Switch } from "@/components/ui/switch";
 import {
   Tabs,
@@ -33,12 +36,15 @@ import { OrderEditModal } from "@/components/admin/order-edit-modal";
 import {
   Activity,
   BadgeCheck,
+  BookOpen,
   Clock,
+  Copy,
   Download,
   MapPin,
   MessageCircle,
   Package,
   LogOut,
+  LifeBuoy,
   Pencil,
   Phone,
   Pin,
@@ -51,6 +57,7 @@ import {
   Truck,
   Wallet,
   Save,
+  Send,
   Settings2,
 } from "lucide-react";
 
@@ -74,6 +81,9 @@ type OrderLike = {
   status: string;
   pinned: boolean;
   waSent: boolean;
+  consignmentId: string;
+  trackingCode: string;
+  adminNote: string;
   createdAt: string | Date;
 };
 
@@ -142,6 +152,41 @@ function colorLabel(id: string): string {
   return PRODUCT_COLORS.find((c) => c.id === id)?.label ?? id;
 }
 
+/** Small copy-to-clipboard chip used in the Telegram setup guide. */
+function CopyChip({
+  text,
+  copied,
+  onCopy,
+}: {
+  text: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      className="ml-1 inline-flex items-center gap-1 rounded-full border border-[#229ED9]/40 bg-[#229ED9]/10 px-2 py-0.5 align-middle font-mono text-[11px] font-bold text-[#0b6d9e] transition-colors hover:bg-[#229ED9]/20"
+    >
+      <Copy className="size-3" /> {copied ? "কপি ✓" : text}
+    </button>
+  );
+}
+
+/** External Telegram link chip (opens in a new tab). */
+function TgLink({ href, children }: { href: string; children: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="ml-1 inline-flex items-center gap-1 rounded-full bg-[#229ED9] px-2.5 py-0.5 align-middle text-[11px] font-bold text-white transition-colors hover:bg-[#1b8bc0]"
+    >
+      {children} ↗
+    </a>
+  );
+}
+
 /** All chosen colors, joined (falls back to the legacy single color). */
 function orderColors(o: OrderLike): string {
   try {
@@ -161,6 +206,8 @@ export function AdminDashboard({
   productConfig: initialProducts,
   locationEnabled: initialLocationEnabled,
   whatsapp: initialWhatsapp,
+  telegram: initialTelegram,
+  steadfast: initialSteadfast,
   customers: initialCustomers,
 }: {
   initialOrders: OrderLike[];
@@ -168,6 +215,8 @@ export function AdminDashboard({
   productConfig: ProductConfig;
   locationEnabled: boolean;
   whatsapp: WhatsappConfig;
+  telegram: TelegramConfig;
+  steadfast: SteadfastConfig;
   customers: CustomerLike[];
 }) {
   const router = useRouter();
@@ -178,22 +227,48 @@ export function AdminDashboard({
   const [chargeInputs, setChargeInputs] = useState<Record<string, string>>(() =>
     Object.fromEntries(initialConfig.zones.map((z) => [z.id, String(z.charge)]))
   );
+  const [noteInputs, setNoteInputs] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialConfig.zones.map((z) => [z.id, z.note ?? ""]))
+  );
   const [savingSettings, setSavingSettings] = useState(false);
   const [products, setProducts] = useState<ProductConfig>(initialProducts);
-  const [priceInputs, setPriceInputs] = useState<Record<string, { price: string; oldPrice: string }>>(
-    () =>
-      Object.fromEntries(
-        initialProducts.packages.map((p) => [
-          p.id,
-          { price: String(p.price), oldPrice: String(p.oldPrice) },
-        ])
-      )
+  const [tierInputs, setTierInputs] = useState<string[]>(() =>
+    initialProducts.tiers.length === 10
+      ? initialProducts.tiers.map(String)
+      : [...DEFAULT_TIERS].map(String)
+  );
+  const [oldInputs, setOldInputs] = useState<Record<string, string>>(() =>
+    Object.fromEntries(initialProducts.packages.map((p) => [p.id, String(p.oldPrice)]))
   );
   const [savingProducts, setSavingProducts] = useState(false);
   const [locOn, setLocOn] = useState<boolean>(initialLocationEnabled);
   const [savingLoc, setSavingLoc] = useState(false);
   const [waInputs, setWaInputs] = useState<WhatsappConfig>(initialWhatsapp);
   const [savingWa, setSavingWa] = useState(false);
+  const [tgInputs, setTgInputs] = useState<TelegramConfig>(initialTelegram);
+  const [connectingTg, setConnectingTg] = useState(false);
+  const [testingTg, setTestingTg] = useState(false);
+  const [showTgGuide, setShowTgGuide] = useState(true);
+  const [showTgHelp, setShowTgHelp] = useState(false);
+  const [sfInputs, setSfInputs] = useState<SteadfastConfig>(initialSteadfast);
+  const [checkingSf, setCheckingSf] = useState(false);
+  const [sendingSfId, setSendingSfId] = useState<string | null>(null);
+  const [showSfGuide, setShowSfGuide] = useState(true);
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
+
+  const copyCmd = async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCmd(key);
+      setTimeout(() => setCopiedCmd((cur) => (cur === key ? null : cur)), 1500);
+    } catch {
+      toast({
+        title: "কপি হয়নি",
+        description: "লেখাটা সিলেক্ট করে নিজে কপি করুন।",
+        variant: "destructive",
+      });
+    }
+  };
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<string>("all");
@@ -294,7 +369,7 @@ export function AdminDashboard({
     setSelectedIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   };
 
-  const printSelected = (per: 2 | 4) => {
+  const printSelected = (per: 2 | 4 | 6) => {
     if (selectedIds.length === 0) return;
     window.open(`/admin/print?ids=${selectedIds.join(",")}&per=${per}`, "_blank");
   };
@@ -345,7 +420,7 @@ export function AdminDashboard({
       const res = await fetch("/api/admin/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ charges: chargeInputs }),
+        body: JSON.stringify({ charges: chargeInputs, notes: noteInputs }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -359,6 +434,11 @@ export function AdminDashboard({
       setConfig(data.config);
       setChargeInputs(
         Object.fromEntries(data.config.zones.map((z) => [z.id, String(z.charge)]))
+      );
+      setNoteInputs(
+        Object.fromEntries(
+          data.config.zones.map((z: { id: string; note: string }) => [z.id, z.note ?? ""])
+        )
       );
       toast({
         title: "ডেলিভারি চার্জ সেভ হয়েছে",
@@ -379,11 +459,13 @@ export function AdminDashboard({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          products: products.packages.map((p) => ({
-            id: p.id,
-            price: Number(priceInputs[p.id]?.price),
-            oldPrice: Number(priceInputs[p.id]?.oldPrice),
-          })),
+          products: {
+            tiers: tierInputs.map((t) => Number(t)),
+            packages: products.packages.map((p) => ({
+              id: p.id,
+              oldPrice: Number(oldInputs[p.id]),
+            })),
+          },
         }),
       });
       const data = await res.json();
@@ -396,17 +478,18 @@ export function AdminDashboard({
         return;
       }
       setProducts(data.products);
-      setPriceInputs(
+      setTierInputs(data.products.tiers.map((t: number) => String(t)));
+      setOldInputs(
         Object.fromEntries(
-          data.products.packages.map((p: { id: string; price: number; oldPrice: number }) => [
+          data.products.packages.map((p: { id: string; oldPrice: number }) => [
             p.id,
-            { price: String(p.price), oldPrice: String(p.oldPrice) },
+            String(p.oldPrice),
           ])
         )
       );
       toast({
-        title: "প্যাকেজ প্রাইস সেভ হয়েছে",
-        description: "ওয়েবসাইটের সব জায়গায় নতুন দাম দেখা যাবে।",
+        title: "দামের table সেভ হয়েছে",
+        description: "ওয়েবসাইট ও অর্ডারের হিসাবে সাথে সাথে নতুন দাম বসবে।",
       });
     } catch {
       toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
@@ -469,6 +552,174 @@ export function AdminDashboard({
       toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
     } finally {
       setSavingWa(false);
+    }
+  };
+
+  const connectTelegram = async () => {
+    setConnectingTg(true);
+    try {
+      const res = await fetch("/api/admin/telegram/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botToken: tgInputs.botToken, chatId: tgInputs.chatId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "কানেক্ট হয়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setTgInputs(data.telegram);
+      toast({
+        title: "Telegram Connected ✓",
+        description: data.bot?.username
+          ? `@${data.bot.username} — এখন থেকে নতুন অর্ডার এখানে আসবে।`
+          : "এখন থেকে নতুন অর্ডার Telegram-এ আসবে।",
+      });
+    } catch {
+      toast({ title: "কানেক্ট ব্যর্থ", variant: "destructive" });
+    } finally {
+      setConnectingTg(false);
+    }
+  };
+
+  const sendTelegramTest = async () => {
+    setTestingTg(true);
+    try {
+      const res = await fetch("/api/admin/telegram/test", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "টেস্ট যায়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "টেস্ট পাঠানো হয়েছে", description: "Telegram চ্যাটে ছবিসহ নমুনা অর্ডার দেখুন।" });
+    } catch {
+      toast({ title: "টেস্ট ব্যর্থ", variant: "destructive" });
+    } finally {
+      setTestingTg(false);
+    }
+  };
+
+  const toggleTelegram = async (v: boolean) => {
+    const next = { ...tgInputs, enabled: v };
+    setTgInputs(next);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegram: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTgInputs(tgInputs);
+        toast({
+          title: "সেভ হয়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setTgInputs(data.telegram);
+    } catch {
+      setTgInputs(tgInputs);
+      toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
+    }
+  };
+
+  const checkSteadfast = async () => {
+    setCheckingSf(true);
+    try {
+      const res = await fetch("/api/admin/courier/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: sfInputs.apiKey, secretKey: sfInputs.secretKey }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "যাচাই হয়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setSfInputs({ enabled: true, apiKey: sfInputs.apiKey, secretKey: sfInputs.secretKey });
+      toast({
+        title: "Steadfast Connected ✓",
+        description: `ব্যালেন্স ৳${data.balance} — এখন one-click-এ consignment বানাতে পারবেন।`,
+      });
+    } catch {
+      toast({ title: "যাচাই ব্যর্থ", variant: "destructive" });
+    } finally {
+      setCheckingSf(false);
+    }
+  };
+
+  const toggleSteadfast = async (v: boolean) => {
+    const next = { ...sfInputs, enabled: v };
+    setSfInputs(next);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ steadfast: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSfInputs(sfInputs);
+        toast({
+          title: "সেভ হয়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setSfInputs(data.steadfast);
+    } catch {
+      setSfInputs(sfInputs);
+      toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
+    }
+  };
+
+  const sendToCourier = async (id: string) => {
+    setSendingSfId(id);
+    try {
+      const res = await fetch("/api/admin/courier/consignment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "কুরিয়ারে যায়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setOrders((cur) =>
+        cur.map((x) =>
+          x.id === id
+            ? { ...x, consignmentId: data.consignmentId ?? "", trackingCode: data.trackingCode ?? "" }
+            : x
+        )
+      );
+      toast({
+        title: data.duplicate ? "এটা আগেই পাঠানো ছিল" : "Steadfast consignment তৈরি ✓",
+        description: `Consignment ID: ${data.consignmentId}${data.trackingCode ? ` • Tracking: ${data.trackingCode}` : ""}`,
+      });
+    } catch {
+      toast({ title: "পাঠানো ব্যর্থ", variant: "destructive" });
+    } finally {
+      setSendingSfId(null);
     }
   };
 
@@ -588,9 +839,9 @@ export function AdminDashboard({
             <div className="flex items-center gap-2">
               <Settings2 className="size-5 text-brand" />
               <div>
-                <h2 className="font-bold text-ink">ডেলিভারি চার্জ সেটিংস</h2>
+                <h2 className="font-bold text-ink">ডেলিভারি চার্জ + নোট সেটিংস</h2>
                 <p className="text-xs text-muted-foreground">
-                  এখানে চার্জ বদলালে ওয়েবসাইটের অর্ডার ফর্মে সাথে সাথে পরিবর্তন হয়ে যাবে। ০ দিলে সেই এলাকায় ফ্রি ডেলিভারি।
+                  চার্জ/নোট বদলালে ওয়েবসাইটে সাথে সাথে বসবে। ০ দিলে সেই এলাকায় ফ্রি। ৩+ পিসের অর্ডারে সব এলাকায় ডেলিভারি অটো-ফ্রি।
                 </p>
               </div>
             </div>
@@ -633,6 +884,18 @@ export function AdminDashboard({
                     ? `অর্ডারে যোগ হবে: ৳${toBn(Number(chargeInputs[z.id]) || 0)}`
                     : "এই এলাকায় ফ্রি ডেলিভারি"}
                 </p>
+                <label className="mt-2 block text-xs font-semibold text-ink">
+                  কাস্টম নোট <span className="font-normal text-muted-foreground">(ওয়েবসাইট + invoice-তে দেখাবে)</span>
+                </label>
+                <input
+                  value={noteInputs[z.id] ?? ""}
+                  onChange={(e) =>
+                    setNoteInputs((cur) => ({ ...cur, [z.id]: e.target.value }))
+                  }
+                  placeholder="যেমন: ঈদের ছুটিতে ২ দিন দেরি হতে পারে"
+                  maxLength={140}
+                  className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                />
               </div>
             ))}
             <div className="rounded-xl border border-dashed border-border bg-cream/30 p-3.5 text-xs leading-relaxed text-muted-foreground">
@@ -651,9 +914,9 @@ export function AdminDashboard({
             <div className="flex items-center gap-2">
               <Tag className="size-5 text-brand" />
               <div>
-                <h2 className="font-bold text-ink">প্যাকেজ প্রাইস সেটিংস</h2>
+                <h2 className="font-bold text-ink">দামের table (ভলিউম ডিসকাউন্ট)</h2>
                 <p className="text-xs text-muted-foreground">
-                  দাম বদলে সেভ করলে প্রাইসিং সেকশন, অর্ডার ফর্ম ও অর্ডারের হিসাবে সাথে সাথে নতুন দাম বসবে।
+                  মোট যত পিস, প্রতি-পিস তত সস্তা। সেভ করলে ওয়েবসাইট ও অর্ডারের হিসাবে সাথে সাথে বসবে। পরের ঘরের দাম আগেরটার চেয়ে বেশি হতে পারবে না।
                 </p>
               </div>
             </div>
@@ -673,58 +936,56 @@ export function AdminDashboard({
               )}
             </Button>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {products.packages.map((p) => {
-              const meta = PACKAGE_META[p.id];
-              const inPrice = Number(priceInputs[p.id]?.price);
-              const inOld = Number(priceInputs[p.id]?.oldPrice);
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            {tierInputs.map((t, i) => {
+              const n = i + 1;
+              const perPiece = Number(t) || 0;
               return (
-                <div key={p.id} className="rounded-xl border border-border bg-cream/50 p-3.5">
+                <div key={n} className="rounded-xl border border-border bg-cream/50 p-3">
                   <label className="text-sm font-semibold text-ink">
-                    {meta.priceName}{" "}
-                    <span className="font-normal text-muted-foreground">({meta.qtyLabel})</span>
+                    {toBn(n)}টি নিলে <span className="font-normal text-muted-foreground">/পিস</span>
                   </label>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <div>
-                      <span className="text-xs text-muted-foreground">বিক্রয় মূল্য (৳)</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={999999}
-                        inputMode="numeric"
-                        value={priceInputs[p.id]?.price ?? "0"}
-                        onChange={(e) =>
-                          setPriceInputs((cur) => ({
-                            ...cur,
-                            [p.id]: { ...cur[p.id], price: e.target.value },
-                          }))
-                        }
-                        className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-base font-bold text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted-foreground">আগের মূল্য (৳)</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={999999}
-                        inputMode="numeric"
-                        value={priceInputs[p.id]?.oldPrice ?? "0"}
-                        onChange={(e) =>
-                          setPriceInputs((cur) => ({
-                            ...cur,
-                            [p.id]: { ...cur[p.id], oldPrice: e.target.value },
-                          }))
-                        }
-                        className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-base font-bold text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-                      />
-                    </div>
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    <span className="text-sm font-bold text-muted-foreground">৳</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={99999}
+                      inputMode="numeric"
+                      value={t}
+                      onChange={(e) =>
+                        setTierInputs((cur) => cur.map((v, j) => (j === i ? e.target.value : v)))
+                      }
+                      className="h-10 w-full rounded-lg border border-border bg-white px-3 text-base font-bold text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                    />
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    প্রতি পিস: ৳
-                    {toBn(perPiecePrice({ price: inPrice || 0, quantity: meta.quantity }))}
-                    {inOld > inPrice ? ` • সাশ্রয়: ৳${toBn(inOld - inPrice)}` : ""}
+                    মোট ৳{toBn(perPiece * n)}
+                    {n >= 3 ? " • 🚚 ফ্রি" : ""}
                   </p>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {products.packages.map((p) => {
+              const meta = PACKAGE_META[p.id];
+              return (
+                <div key={p.id} className="rounded-xl border border-dashed border-border bg-cream/30 p-3">
+                  <label className="text-xs font-semibold text-ink">
+                    {meta.priceName} — আগের মূল্য (৳, কাটা দাম)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={999999}
+                    inputMode="numeric"
+                    value={oldInputs[p.id] ?? "0"}
+                    onChange={(e) =>
+                      setOldInputs((cur) => ({ ...cur, [p.id]: e.target.value }))
+                    }
+                    className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-base font-bold text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                  />
                 </div>
               );
             })}
@@ -852,6 +1113,348 @@ export function AdminDashboard({
                   ))}
                 </ul>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Telegram order alerts */}
+        <div className="mt-6 rounded-2xl border border-[#229ED9]/40 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Send className="size-5 text-[#229ED9]" />
+              <div>
+                <h2 className="font-bold text-ink">
+                  Telegram অর্ডার অ্যালার্ট{" "}
+                  {tgInputs.enabled && tgInputs.botUsername && (
+                    <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                      Connected ✓ @{tgInputs.botUsername}
+                    </span>
+                  )}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  নতুন অর্ডার এলেই ফুল ডিটেইলস + প্রোডাক্ট ছবি আপনার Telegram চ্যাটে যাবে।
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={sendTelegramTest}
+                disabled={testingTg || connectingTg}
+                className="rounded-full font-bold"
+              >
+                {testingTg ? (
+                  <>
+                    <RefreshCw className="mr-1.5 size-4 animate-spin" /> পাঠাচ্ছে...
+                  </>
+                ) : (
+                  "Test মেসেজ"
+                )}
+              </Button>
+              <Button
+                onClick={connectTelegram}
+                disabled={connectingTg || testingTg}
+                className="rounded-full bg-[#229ED9] font-bold text-white hover:bg-[#1b8bc0] disabled:opacity-60"
+              >
+                {connectingTg ? (
+                  <>
+                    <RefreshCw className="mr-1.5 size-4 animate-spin" /> কানেক্ট হচ্ছে...
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-1.5 size-4" /> Connect চাপুন
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Live setup checklist — ticks itself as you complete each step */}
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              { done: tgInputs.botToken.length > 0, label: "১. Token বসানো" },
+              { done: tgInputs.chatId.length > 0, label: "২. Chat ID বসানো" },
+              { done: tgInputs.botUsername.length > 0, label: "৩. Connected" },
+              { done: tgInputs.enabled, label: "৪. অ্যালার্ট চালু" },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className={`rounded-xl border px-3 py-2 text-center text-xs font-bold ${
+                  s.done
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    : "border-border bg-cream/50 text-muted-foreground"
+                }`}
+              >
+                {s.done ? "✓ " : "○ "}{s.label}
+              </div>
+            ))}
+          </div>
+
+          {/* Step-by-step Bengali setup guide */}
+          <div className="mt-3 overflow-hidden rounded-xl border border-[#229ED9]/30">
+            <button
+              type="button"
+              onClick={() => setShowTgGuide((v) => !v)}
+              className="flex w-full items-center justify-between gap-2 bg-[#229ED9]/10 px-4 py-3 text-left text-sm font-bold text-ink hover:bg-[#229ED9]/15"
+            >
+              <span className="flex items-center gap-2">
+                <BookOpen className="size-4 text-[#229ED9]" />
+                📖 সেটআপ গাইড — ধাপে ধাপে (প্রথমবার পড়ুন)
+              </span>
+              <span className="text-[#229ED9]">{showTgGuide ? "▲" : "▼"}</span>
+            </button>
+            {showTgGuide && (
+              <ol className="space-y-4 bg-white p-4 text-sm leading-relaxed text-ink">
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#229ED9] text-xs font-bold text-white">১</span>
+                  <div>
+                    <b>Bot বানান (২ মিনিট, একবারই):</b>
+                    <br />ক) Telegram-এ
+                    <TgLink href="https://t.me/BotFather">@BotFather খুলুন</TgLink>
+                    খ) তাকে পাঠান:
+                    <CopyChip text="/newbot" copied={copiedCmd === "newbot"} onCopy={() => copyCmd("newbot", "/newbot")} />
+                    গ) bot-এর নাম দিন (যেমন: Ghumpara Baby Orders) ঘ) username দিন — শেষে <b>bot</b> থাকতেই হবে (যেমন: ghumpara_orders_bot) ঙ) BotFather যে লম্বা token দেবে (মাঝখানে <b>:</b> থাকে) → নিচে <b>Bot Token</b> ঘরে paste করুন।
+                    <br />⚠️ Token গোপন রাখুন — এটা আপনার bot-এর চাবি।
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#229ED9] text-xs font-bold text-white">২</span>
+                  <div>
+                    <b>Chat ID নিন (মেসেজ কোথায় যাবে):</b>
+                    <br />• <b>নিজের ফোনে</b> পেতে চাইলে:
+                    <TgLink href="https://t.me/userinfobot">@userinfobot খুলুন</TgLink>
+                    → <b>/start</b> দিন → যে নম্বর দেবে সেটাই Chat ID। আর আপনার bot-টাকে খুঁজে একবার <b>/start</b> চেপে রাখুন (নইলে bot আপনাকে মেসেজ পাঠাতে পারবে না)।
+                    <br />• <b>গ্রুপে</b> পেতে চাইলে (টিমের সবাই দেখবে): গ্রুপ খুলে আপনার bot-কে member হিসেবে add করুন → তারপর
+                    <TgLink href="https://t.me/getmyid_bot">@getmyid_bot add করুন</TgLink>
+                    → সে যে ID দেবে (মাইনাসসহ, যেমন -100…) → <b>পুরোটা</b> নিচে <b>Chat ID</b> ঘরে paste করুন → @getmyid_bot-কে গ্রুপ থেকে বের করে দিন।
+                    <br />• <b>Channel-এ</b> চাইলে (যেমন @babyblanketlanding): bot-কে channel-এর <b>admin</b> বানান (বিস্তারিত নিচে <b>সমস্যা হচ্ছে?</b> অংশে) → Chat ID ঘরে channel-এর <b>@username</b> বসান।
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#229ED9] text-xs font-bold text-white">৩</span>
+                  <div>
+                    <b>Connect চাপুন:</b> উপরের নীল <b>Connect চাপুন</b> বাটনে ক্লিক করুন। সবুজ <b>Connected ✓ @username</b> এলে সেভ সম্পূর্ণ — আর কিছু করা লাগবে না। লাল লেখা এলে নিচের <b>সমস্যা হচ্ছে?</b> অংশ দেখুন।
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#229ED9] text-xs font-bold text-white">৪</span>
+                  <div>
+                    <b>Test করুন:</b> <b>Test মেসেজ</b> চাপুন → আপনার chat-এ ছবিসহ নমুনা অর্ডার এলে সেটআপ <b>১০০% OK</b>।
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-emerald-500 text-xs font-bold text-white">৫</span>
+                  <div>
+                    <b>Live:</b> এখন থেকে প্রতিটা নতুন অর্ডার অটোমেটিক Telegram-এ আসবে। সাময়িক বন্ধ রাখতে চাইলে উপরের টগল বন্ধ করুন।
+                  </div>
+                </li>
+              </ol>
+            )}
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-cream/50 p-3.5 sm:col-span-2">
+              <div>
+                <div className="text-sm font-semibold text-ink">অ্যালার্ট {tgInputs.enabled ? "চালু" : "বন্ধ"}</div>
+                <p className="text-xs text-muted-foreground">Connect করলেই অটো চালু হয়ে যাবে।</p>
+              </div>
+              <Switch checked={tgInputs.enabled} onCheckedChange={toggleTelegram} />
+            </div>
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5">
+              <label className="text-sm font-semibold text-ink">Bot Token *</label>
+              <input
+                type="password"
+                value={tgInputs.botToken}
+                onChange={(e) => setTgInputs((cur) => ({ ...cur, botToken: e.target.value }))}
+                placeholder="যেমন: 123456:ABC-DEF..."
+                className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm font-mono text-ink outline-none focus:border-[#229ED9] focus:ring-2 focus:ring-[#229ED9]/20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Telegram-এ @BotFather → /newbot → token-টা copy-paste করুন</p>
+            </div>
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5">
+              <label className="text-sm font-semibold text-ink">Chat ID *</label>
+              <input
+                value={tgInputs.chatId}
+                onChange={(e) => setTgInputs((cur) => ({ ...cur, chatId: e.target.value }))}
+                placeholder="যেমন: 123456789 বা -1001234567890"
+                inputMode="numeric"
+                className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm font-mono text-ink outline-none focus:border-[#229ED9] focus:ring-2 focus:ring-[#229ED9]/20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">নিজের ID: @userinfobot-কে মেসেজ দিন • গ্রুপের ID: bot-কে গ্রুপে add করে @getmyid_bot দিয়ে নিন</p>
+            </div>
+          </div>
+
+          {/* Troubleshooting */}
+          <div className="mt-3 overflow-hidden rounded-xl border border-amber-300/60">
+            <button
+              type="button"
+              onClick={() => setShowTgHelp((v) => !v)}
+              className="flex w-full items-center justify-between gap-2 bg-amber-50 px-4 py-3 text-left text-sm font-bold text-ink hover:bg-amber-100/60"
+            >
+              <span className="flex items-center gap-2">
+                <LifeBuoy className="size-4 text-amber-600" />
+                ❓ সমস্যা হচ্ছে? — কারণ ও সমাধান
+              </span>
+              <span className="text-amber-600">{showTgHelp ? "▲" : "▼"}</span>
+            </button>
+            {showTgHelp && (
+              <ul className="space-y-3 bg-white p-4 text-sm leading-relaxed text-ink">
+                <li>
+                  <b>“Bot Token সঠিক নয়” আসে →</b> @BotFather-কে
+                  <CopyChip text="/token" copied={copiedCmd === "token"} onCopy={() => copyCmd("token", "/token")} />
+                  পাঠিয়ে token-টা আবার মিলিয়ে নিন। paste করার সময় আগে-পিছে space থাকলে মুছে দিন।
+                </li>
+                <li>
+                  <b>“Chat ID-তে মেসেজ পাঠানো যাচ্ছে না” আসে →</b> নিজের chat হলে: bot-টাকে খুঁজে <b>/start</b> চেপেছেন তো? গ্রুপ হলে: bot গ্রুপে add আছে তো? supergroup হলে bot-কে <b>admin</b> বানান। ID মাইনাসসহ (<b>-100…</b>) পুরোটা বসিয়েছেন তো?
+                </li>
+                <li>
+                  <b>Channel-এ (যেমন @babyblanketlanding) দিতে চাইলে →</b> শুধু add করলে হবে না — bot-কে channel-এর <b>admin বানাতেই হবে</b> (Post Messages permission সহ)। ধাপ: Channel খুলুন → নামের উপর চাপ → Administrators → Add Admin → আপনার bot সিলেক্ট করুন → Post Messages ON রেখে Done → তারপর এখানে <b>Connect চাপুন</b>।
+                </li>
+                <li>
+                  <b>“bot নিজেকে মেসেজ পাঠাতে পারে না” আসে →</b> Chat ID-এর জায়গায় ভুল করে bot-এর নিজের ID বসেছে (সাধারণত Token-এর সামনের সংখ্যাটা)। ওটা মুছে <TgLink href="https://t.me/userinfobot">@userinfobot</TgLink> থেকে আপনার নিজের ID বসিয়ে আবার Connect করুন।
+                </li>
+                <li>
+                  <b>Test চাপলে “আগে Connect করুন” আসে →</b> ধাপ ৩ (Connect) শেষ না করে Test কাজ করবে না — আগে Connect সফল করুন।
+                </li>
+                <li>
+                  <b>Test আসে, কিন্তু নতুন অর্ডারে আসে না →</b> উপরের <b>অ্যালার্ট চালু</b> টগল ON আছে কিনা দেখুন। ঠিক না হলে আবার Connect করুন।
+                </li>
+                <li>
+                  <b>ছবি ছাড়া শুধু লেখা এলো →</b> অর্ডারের কালার-ছবি সার্ভারে না থাকলে এমন হয় — এটা হলে আমাকে জানান।
+                </li>
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {/* Steadfast courier setup + one-click consignment */}
+        <div className="mt-6 rounded-2xl border border-red-300/60 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Truck className="size-5 text-red-600" />
+              <div>
+                <h2 className="font-bold text-ink">
+                  Steadfast কুরিয়ার{" "}
+                  {sfInputs.enabled && (
+                    <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                      Connected ✓
+                    </span>
+                  )}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  One-click-এ অর্ডার Steadfast-এ যাবে, consignment ID + tracking code auto-save হয়ে invoice-এ আসবে।
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={checkSteadfast}
+                disabled={checkingSf}
+                className="rounded-full bg-red-600 font-bold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {checkingSf ? (
+                  <>
+                    <RefreshCw className="mr-1.5 size-4 animate-spin" /> যাচাই হচ্ছে...
+                  </>
+                ) : (
+                  "Check চাপুন"
+                )}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {[
+              { done: sfInputs.apiKey.length > 0, label: "১. Key বসানো" },
+              { done: sfInputs.secretKey.length > 0, label: "২. Secret বসানো" },
+              { done: sfInputs.enabled, label: "৩. Connected" },
+            ].map((s) => (
+              <div
+                key={s.label}
+                className={`rounded-xl border px-3 py-2 text-center text-xs font-bold ${
+                  s.done
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    : "border-border bg-cream/50 text-muted-foreground"
+                }`}
+              >
+                {s.done ? "✓ " : "○ "}{s.label}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 overflow-hidden rounded-xl border border-red-200">
+            <button
+              type="button"
+              onClick={() => setShowSfGuide((v) => !v)}
+              className="flex w-full items-center justify-between gap-2 bg-red-50 px-4 py-3 text-left text-sm font-bold text-ink hover:bg-red-100/60"
+            >
+              <span className="flex items-center gap-2">
+                <BookOpen className="size-4 text-red-600" />
+                📖 সেটআপ গাইড — ধাপে ধাপে
+              </span>
+              <span className="text-red-600">{showSfGuide ? "▲" : "▼"}</span>
+            </button>
+            {showSfGuide && (
+              <ol className="space-y-4 bg-white p-4 text-sm leading-relaxed text-ink">
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-red-600 text-xs font-bold text-white">১</span>
+                  <div>
+                    <b>Key নিন (একবারই):</b> Steadfast merchant প্যানেলে লগইন করে
+                    <TgLink href="https://steadfast.com.bd/user/api">API পেজ খুলুন</TgLink>
+                    → <b>Api-Key</b> + <b>Secret-Key</b> copy করে নিচের ঘরে paste করুন। (Key গোপন রাখুন।)
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-red-600 text-xs font-bold text-white">২</span>
+                  <div>
+                    <b>Check চাপুন:</b> উপরের লাল বাটনে ক্লিক করুন — ব্যালেন্স দেখিয়ে <b>Connected ✓</b> এলে সেভ সম্পূর্ণ (এতে টাকা কাটে না, consignment বানায় না)।
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-red-600 text-xs font-bold text-white">৩</span>
+                  <div>
+                    <b>One-click পাঠান:</b> প্রতিটা অর্ডারের পাশে <b>🚚 বাটন</b> চাপুন → consignment তৈরি হয়ে ID সবুজ ব্যাজে দেখাবে। একই অর্ডারে দুবার চাপলেও ডাবল consignment হবে না।
+                  </div>
+                </li>
+                <li className="flex gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-emerald-500 text-xs font-bold text-white">৪</span>
+                  <div>
+                    <b>Invoice প্রিন্ট:</b> Consignment ID + Tracking Code বড় করে invoice-এ আসবে — প্রিন্ট করে পার্সেলের উপর লাগিয়ে দিন।
+                  </div>
+                </li>
+              </ol>
+            )}
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-cream/50 p-3.5 sm:col-span-2">
+              <div>
+                <div className="text-sm font-semibold text-ink">Steadfast {sfInputs.enabled ? "চালু" : "বন্ধ"}</div>
+                <p className="text-xs text-muted-foreground">Check করলেই অটো চালু হয়ে যাবে।</p>
+              </div>
+              <Switch checked={sfInputs.enabled} onCheckedChange={toggleSteadfast} />
+            </div>
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5">
+              <label className="text-sm font-semibold text-ink">Api-Key *</label>
+              <input
+                type="password"
+                value={sfInputs.apiKey}
+                onChange={(e) => setSfInputs((cur) => ({ ...cur, apiKey: e.target.value }))}
+                placeholder="Steadfast প্যানেল থেকে Api-Key"
+                className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm font-mono text-ink outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">steadfast.com.bd → লগইন → API পেজ</p>
+            </div>
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5">
+              <label className="text-sm font-semibold text-ink">Secret-Key *</label>
+              <input
+                type="password"
+                value={sfInputs.secretKey}
+                onChange={(e) => setSfInputs((cur) => ({ ...cur, secretKey: e.target.value }))}
+                placeholder="Steadfast প্যানেল থেকে Secret-Key"
+                className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm font-mono text-ink outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Key ভুল হলে Check-এ লাল error আসবে, সেভ হবে না</p>
             </div>
           </div>
         </div>
@@ -1011,6 +1614,14 @@ export function AdminDashboard({
               >
                 পেজে ৪টা প্রিন্ট
               </Button>
+              <Button
+                size="sm"
+                disabled={selectedIds.length === 0}
+                onClick={() => printSelected(6)}
+                className="rounded-full bg-white font-bold text-ink hover:bg-cream disabled:opacity-50"
+              >
+                পেজে ৬টা প্রিন্ট
+              </Button>
             </div>
           </div>
         )}
@@ -1044,6 +1655,14 @@ export function AdminDashboard({
                         <span className="rounded-lg bg-cream px-2 py-0.5 font-mono text-xs font-bold text-ink">
                           {o.orderCode}
                         </span>
+                        {o.consignmentId ? (
+                          <span
+                            title={o.trackingCode ? `Tracking: ${o.trackingCode}` : "Steadfast consignment তৈরি"}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2 py-0.5 font-mono text-xs font-bold text-emerald-800"
+                          >
+                            📦 {o.consignmentId}
+                          </span>
+                        ) : null}
                         <span
                           className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold ${meta.badge}`}
                         >
@@ -1091,6 +1710,11 @@ export function AdminDashboard({
                       <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted-foreground">
                         {o.address}
                       </p>
+                      {o.adminNote ? (
+                        <p className="mt-1 max-w-xl rounded-lg bg-honey/15 px-2.5 py-1 text-sm leading-relaxed text-ink">
+                          📝 <b>নোট:</b> {o.adminNote}
+                        </p>
+                      ) : null}
                       {[o.division, o.district, o.upazila].some(Boolean) && (
                         <p className="mt-1 max-w-xl text-sm font-medium leading-relaxed text-ink">
                           📍 {[o.division, o.district, o.upazila].filter(Boolean).join(", ")}
@@ -1144,6 +1768,20 @@ export function AdminDashboard({
                         >
                           <Printer className="size-4" />
                         </button>
+                        {!o.consignmentId && (
+                          <button
+                            onClick={() => sendToCourier(o.id)}
+                            disabled={sendingSfId === o.id}
+                            title="Steadfast-এ পাঠান (one-click consignment)"
+                            className="grid size-9 place-items-center rounded-full border border-border bg-white text-muted-foreground transition-colors hover:border-red-500 hover:text-red-600 disabled:opacity-60"
+                          >
+                            {sendingSfId === o.id ? (
+                              <RefreshCw className="size-4 animate-spin" />
+                            ) : (
+                              <Truck className="size-4" />
+                            )}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDelete(o.id)}
                           title={deleteArm === o.id ? "নিশ্চিত করতে আবার চাপুন" : "অর্ডার ডিলিট"}

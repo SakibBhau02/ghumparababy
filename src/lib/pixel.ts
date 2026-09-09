@@ -22,15 +22,22 @@ const EVENT_KEY: Record<string, string> = {
  * No-ops when:
  *  - Pixel installed না (fbq ফাংশন নেই), অথবা
  *  - Admin panel থেকে ওই ইভেন্ট বন্ধ করা হয়েছে (__PIXEL_EVENTS__ এ false)
+ * eventID (optional) goes as fbq's 4th arg — used to dedupe against
+ * server Conversions API events carrying the same event_id.
  */
 export function pixelTrack(
   event: string,
-  data?: Record<string, unknown>
+  data?: Record<string, unknown>,
+  eventID?: string
 ): void {
   if (typeof window === "undefined" || typeof window.fbq !== "function") return;
 
   const key = EVENT_KEY[event];
   if (key && window.__PIXEL_EVENTS__?.[key] === false) return;
 
-  window.fbq("track", event, data ?? {});
+  if (eventID) {
+    window.fbq("track", event, data ?? {}, { eventID });
+  } else {
+    window.fbq("track", event, data ?? {});
+  }
 }

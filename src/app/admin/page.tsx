@@ -6,6 +6,8 @@ import { getDeliveryConfig } from "@/lib/delivery";
 import { getProductConfig } from "@/lib/product";
 import { getLocationEnabled } from "@/lib/site-settings";
 import { getWhatsappConfig } from "@/lib/whatsapp";
+import { getTelegramConfig } from "@/lib/telegram";
+import { getSteadfastConfig } from "@/lib/steadfast";
 import { AdminDashboard } from "@/components/admin/dashboard";
 import type { Order } from "@prisma/client";
 
@@ -24,13 +26,15 @@ export default async function AdminPage() {
   }
 
   try {
-    const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp, customers] =
+    const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp, telegram, steadfast, customers] =
       await Promise.all([
         db.order.findMany({ orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] }),
         getDeliveryConfig(),
         getProductConfig(),
         getLocationEnabled(),
         getWhatsappConfig(),
+        getTelegramConfig(),
+        getSteadfastConfig(),
         db.customer.findMany({ orderBy: { lastOrderAt: "desc" } }),
       ]);
 
@@ -41,6 +45,8 @@ export default async function AdminPage() {
         productConfig={productConfig}
         locationEnabled={locationEnabled}
         whatsapp={whatsapp}
+        telegram={telegram}
+        steadfast={steadfast}
         customers={customers}
       />
     );

@@ -5,16 +5,17 @@ import { getWhatsappConfig, sendOrderConfirmation } from "@/lib/whatsapp";
 import { isWhatsappReady } from "@/lib/whatsapp-shared";
 import { getProductConfig } from "@/lib/product";
 import {
-  PACKAGE_META,
-  getPackage,
-  perPiecePrice,
+  MAX_QTY,
+  isFreeShipping,
+  packageNameForQty,
+  priceForQty,
 } from "@/lib/product-shared";
 import { getDeliveryConfig, zoneCharge } from "@/lib/delivery";
 import { getLocationEnabled } from "@/lib/site-settings";
 import { loadBdGeo } from "@/lib/bd-geo-server";
 import { isValidLocationChain } from "@/lib/bd-geo";
 import { recomputeCustomer } from "@/lib/customers";
-import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
+import { PRODUCT_COLORS } from "@/lib/landing-data";
 
 const COLOR_IDS: string[] = PRODUCT_COLORS.map((c) => c.id);
 
@@ -177,14 +178,10 @@ async function handleOrderEdit(id: string, edit: unknown) {
     getDeliveryConfig(),
     getLocationEnabled(),
   ]);
-  const selected = getPackage(productConfig, str(e.packageId));
-  if (!selected) return bad("প্যাকেজ সঠিক নয়।");
-  const isCustom = selected.id === "custom";
-  const count = Math.min(
-    Math.max(Math.round(Number(e.count)) || 1, 1),
-    isCustom ? 30 : 10
-  );
-  const totalItems = isCustom ? count : selected.quantity * count;
+  // Quantity-based pricing (volume tiers). Legacy orders may exceed MAX_QTY —
+  // the floor tier still prices them sensibly instead of breaking the edit.
+  const totalItems = Math.min(Math.max(Math.round(Number(e.qty ?? e.count)) || 1, 1), 30);
+  const { perPiece, total: productTotal } = priceForQty(productConfig, totalItems);
   const picked = Array.isArray(e.colors)
     ? e.colors.filter(
         (c): c is string => typeof c === "string" && COLOR_IDS.includes(c)
@@ -222,13 +219,16 @@ async function handleOrderEdit(id: string, edit: unknown) {
       return bad("ডেলিভারি এলাকা সঠিক নয়।");
     }
     deliveryZone = zid;
-    deliveryCharge = zoneCharge(deliveryConfig, zid);
+    // Volume perk mirrors the storefront: 3+ pieces → free delivery.
+    deliveryCharge = isFreeShipping(totalItems) ? 0 : zoneCharge(deliveryConfig, zid);
   }
 
   const prev = await db.order.findUnique({ where: { id } });
   if (!prev) {
     return NextResponse.json({ error: "অর্ডার পাওয়া যায়নি।" }, { status: 404 });
   }
+  // Internal admin note (never shown to customers / invoices / courier).
+  const adminNote = str(e.note).slice(0, 500);
   const order = await db.order.update({
     where: { id },
     data: {
@@ -240,16 +240,13 @@ async function handleOrderEdit(id: string, edit: unknown) {
       upazila: location.upazila,
       color: picked[0],
       colors: JSON.stringify(picked),
-      packageName: isCustom
-        ? `কাস্টম (${toBn(count)}টি)`
-        : count > 1
-          ? `${PACKAGE_META[selected.id].formName} ×${count}`
-          : PACKAGE_META[selected.id].formName,
+      packageName: packageNameForQty(totalItems),
       quantity: totalItems,
-      unitPrice: perPiecePrice(selected),
+      unitPrice: perPiece,
       deliveryZone,
       deliveryCharge,
-      totalPrice: selected.price * count + deliveryCharge,
+      totalPrice: productTotal + deliveryCharge,
+      adminNote,
     },
   });
   await recomputeCustomer(prev.phone);

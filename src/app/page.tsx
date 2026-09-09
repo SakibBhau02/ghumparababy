@@ -20,6 +20,7 @@ import { getLocationEnabled } from "@/lib/site-settings";
 import { getPixelConfig } from "@/lib/pixel-config";
 import type { DeliveryConfig } from "@/lib/delivery-shared";
 import type { ProductConfig } from "@/lib/product-shared";
+import { priceForQty } from "@/lib/product-shared";
 import type { PixelConfig } from "@/lib/pixel-shared";
 
 export const dynamic = "force-dynamic";
@@ -36,8 +37,7 @@ export default async function Home() {
     getProductConfig(),
     getLocationEnabled(),
   ]);
-  const singlePrice =
-    productConfig.packages.find((p) => p.id === "single")?.price ?? 549;
+  const singlePrice = priceForQty(productConfig, 1).total;
 
   return (
     <main className="min-h-screen overflow-x-clip">

@@ -31,6 +31,9 @@ model Order {
   status        String   @default("pending")
   pinned        Boolean  @default(false)
   waSent        Boolean  @default(false)
+  consignmentId String   @default("")
+  trackingCode  String   @default("")
+  adminNote     String   @default("")
   createdAt     DateTime @default(now())
 }
 

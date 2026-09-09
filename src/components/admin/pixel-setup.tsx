@@ -41,11 +41,14 @@ export function PixelSetup({ initialConfig }: { initialConfig: PixelConfig }) {
   const [saved, setSaved] = useState<PixelConfig>(initialConfig);
   const [input, setInput] = useState("");
   const [events, setEvents] = useState<PixelEvents>(initialConfig.events);
-  const [busy, setBusy] = useState<null | "connect" | "disconnect" | "events">(
+  const [capiToken, setCapiToken] = useState(initialConfig.capiToken ?? "");
+  const [testCode, setTestCode] = useState(initialConfig.testEventCode ?? "");
+  const [busy, setBusy] = useState<null | "connect" | "disconnect" | "events" | "capi">(
     null
   );
 
   const connected = saved.enabled && !!saved.pixelId;
+  const capiOn = connected && !!saved.capiToken;
   const savedButOff = !saved.enabled && !!saved.pixelId;
 
   const detected = useMemo(() => extractPixelId(input), [input]);
@@ -110,6 +113,31 @@ export function PixelSetup({ initialConfig }: { initialConfig: PixelConfig }) {
     } catch (e) {
       toast({
         title: "বন্ধ করা যায়নি",
+        description: e instanceof Error ? e.message : "আবার চেষ্টা করুন।",
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveCapi = async () => {
+    setBusy("capi");
+    try {
+      const config = await put({ capiToken, testEventCode: testCode });
+      if (!config) return;
+      setSaved(config);
+      setCapiToken(config.capiToken);
+      setTestCode(config.testEventCode);
+      toast({
+        title: "Conversions API সেভ হয়েছে",
+        description: config.capiToken
+          ? "এখন থেকে প্রতিটা অর্ডারে সার্ভার থেকেও Purchase যাবে (browser-এর সাথে ডিডুপ্লিকেট হয়ে)।"
+          : "Token খালি রাখায় শুধু browser pixel চলবে।",
+      });
+    } catch (e) {
+      toast({
+        title: "সেভ হয়নি",
         description: e instanceof Error ? e.message : "আবার চেষ্টা করুন।",
         variant: "destructive",
       });
@@ -207,6 +235,18 @@ export function PixelSetup({ initialConfig }: { initialConfig: PixelConfig }) {
                       ({activeEvents
                         .map((id) => PIXEL_EVENT_META[id].fbEvent)
                         .join(", ")})
+                      <br />
+                      Conversions API (server):{" "}
+                      {saved.capiToken ? (
+                        <b className="text-leaf">চালু ✓ — প্রতিটা অর্ডারে সার্ভার Purchase যাবে</b>
+                      ) : (
+                        <span>বন্ধ — শুধু browser pixel চলছে</span>
+                      )}
+                      {saved.testEventCode ? (
+                        <>
+                          {" "}• <b className="text-honey">টেস্ট মোড (code বসানো)</b>
+                        </>
+                      ) : null}
                     </>
                   ) : savedButOff ? (
                     <>
@@ -398,6 +438,90 @@ export function PixelSetup({ initialConfig }: { initialConfig: PixelConfig }) {
               • অসংরক্ষিত পরিবর্তন আছে — সেভ করতে ভুলবেন না।
             </p>
           )}
+        </section>
+
+        {/* Step 3: Conversions API */}
+        <section className="rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-sm font-bold text-white">
+                ৩
+              </div>
+              <div>
+                <h2 className="font-bold text-ink">
+                  Conversions API{" "}
+                  {capiOn ? (
+                    <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                      চালু ✓
+                    </span>
+                  ) : null}
+                </h2>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  সার্ভার থেকে Purchase পাঠান — ad-blocker বা iPhone-এ browser
+                  pixel মিস করলেও অর্ডার ট্র্যাক হবে। browser ইভেন্টের সাথে
+                  ডাবল গোনা হবে না (একই orderCode-তে ডিডুপ্লিকেট হয়)।
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={saveCapi}
+              disabled={busy !== null}
+              className="rounded-full bg-brand font-bold text-white hover:bg-brand-deep disabled:opacity-60"
+            >
+              {busy === "capi" ? (
+                <Loader2 className="mr-1.5 size-4 animate-spin" />
+              ) : (
+                <Save className="mr-1.5 size-4" />
+              )}
+              CAPI সেভ করুন
+            </Button>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5">
+              <label className="text-sm font-semibold text-ink">
+                Conversions API Access Token *
+              </label>
+              <input
+                type="password"
+                value={capiToken}
+                onChange={(e) => setCapiToken(e.target.value)}
+                placeholder="EAAxxxx…"
+                dir="ltr"
+                className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 font-mono text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Events Manager → Data Sources → Pixel → Settings → Conversions
+                API → Generate access token
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5">
+              <label className="text-sm font-semibold text-ink">
+                Test Event Code <span className="font-normal text-muted-foreground">(optional)</span>
+              </label>
+              <input
+                value={testCode}
+                onChange={(e) => setTestCode(e.target.value)}
+                placeholder="যেমন: TEST12345"
+                dir="ltr"
+                className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 font-mono text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Events Manager → Test Events ট্যাবের কোড — যাচাই শেষে মুছে ফেলুন
+              </p>
+            </div>
+          </div>
+          {saved.testEventCode ? (
+            <p className="mt-2.5 rounded-xl border border-honey/50 bg-honey/10 p-3 text-xs font-semibold leading-relaxed text-ink">
+              ⚠️ টেস্ট মোড চালু আছে — ইভেন্ট শুধু Test Events ট্যাবে দেখাবে,
+              live ড্যাশবোর্ডে নয়। যাচাই শেষে code-টা মুছে সেভ করুন।
+            </p>
+          ) : null}
+          <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
+            Token খালি রেখে সেভ করলে শুধু browser pixel চলবে (আগের মতোই)।
+            Server ইভেন্ট কখনো অর্ডার আটকায় না — Meta-তে সমস্যা হলে শুধু log-এ
+            লেখা থাকে।
+          </p>
         </section>
 
         {/* Step 3: Help */}

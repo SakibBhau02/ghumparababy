@@ -53,10 +53,12 @@ function locationLine(order: Order): string {
 function Invoice({
   order,
   zoneLabel,
+  zoneNote,
   compact,
 }: {
   order: Order;
   zoneLabel: string;
+  zoneNote: string;
   compact: boolean;
 }) {
   const colors = colorIds(order);
@@ -84,6 +86,25 @@ function Invoice({
         </div>
       </div>
 
+      {/* Courier consignment — big, for sticking on the parcel */}
+      {order.consignmentId ? (
+        <div className="border-b-2 border-ink bg-ink px-3 py-1.5 text-white">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <div className={`font-mono font-bold ${compact ? "text-lg" : "text-2xl"}`}>
+              📦 {order.consignmentId}
+            </div>
+            {order.trackingCode ? (
+              <div className={`font-mono font-bold ${compact ? "text-sm" : "text-base"}`}>
+                {order.trackingCode}
+              </div>
+            ) : null}
+          </div>
+          <div className="text-[11px] font-semibold text-white/80">
+            Steadfast কুরিয়ার • COD ৳{toBn(order.totalPrice)}
+          </div>
+        </div>
+      ) : null}
+
       {/* Customer */}
       <div className="grid grid-cols-2 gap-2 px-3 py-1.5 text-xs">
         <div>
@@ -96,6 +117,7 @@ function Invoice({
           <div>{order.address}</div>
           {loc && <div className="font-medium text-ink">{loc}</div>}
           {zoneLabel && <div className="text-muted-foreground">({zoneLabel})</div>}
+          {zoneNote && <div className="mt-0.5 text-[11px] font-medium text-ink">📝 {zoneNote}</div>}
         </div>
       </div>
 
@@ -196,7 +218,7 @@ export default async function PrintPage({
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 50);
-  const per = sp.per === "4" ? 4 : 2;
+  const per = sp.per === "6" ? 6 : sp.per === "4" ? 4 : 2;
   if (ids.length === 0) {
     redirect("/admin");
   }
@@ -214,6 +236,8 @@ export default async function PrintPage({
   }
   const zoneName = (id: string) =>
     deliveryConfig.zones.find((z) => z.id === id)?.label ?? "";
+  const zoneNote = (id: string) =>
+    deliveryConfig.zones.find((z) => z.id === id)?.note ?? "";
 
   const idsParam = encodeURIComponent(ids.join(","));
 
@@ -230,9 +254,12 @@ export default async function PrintPage({
           .invoice-2up:nth-of-type(2n) { break-after: page; page-break-after: always; margin-bottom: 0 !important; }
           .invoice-4up { height: 66mm; overflow: hidden; margin: 0 0 3mm 0 !important; }
           .invoice-4up:nth-of-type(4n) { break-after: page; page-break-after: always; margin-bottom: 0 !important; }
+          .invoice-6up { height: 88mm; overflow: hidden; margin: 0 0 3mm 0 !important; }
+          .invoice-6up:nth-of-type(6n) { break-after: page; page-break-after: always; margin-bottom: 0 !important; }
         }
         .invoice-2up { min-height: 120mm; }
         .invoice-4up { min-height: 0; }
+        .invoice-6up { min-height: 0; }
       `}</style>
 
       <div className="no-print mx-auto mb-4 flex max-w-4xl flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow">
@@ -255,16 +282,22 @@ export default async function PrintPage({
           >
             পেজে ৪টা
           </Link>
+          <Link
+            href={`/admin/print?ids=${idsParam}&per=6`}
+            className={`rounded-full px-4 py-2 text-sm font-bold ${per === 6 ? "bg-ink text-white" : "border border-border text-ink"}`}
+          >
+            পেজে ৬টা
+          </Link>
           <PrintButton />
         </div>
       </div>
 
       <div
-        className={`print-grid mx-auto grid max-w-4xl gap-4 ${per === 4 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}
+        className={`print-grid mx-auto grid max-w-4xl gap-4 ${per === 2 ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"}`}
       >
         {list.map((o) => (
-          <div key={o.id} className={per === 4 ? "invoice-4up" : "invoice-2up"}>
-            <Invoice order={o} zoneLabel={zoneName(o.deliveryZone)} compact={per === 4} />
+          <div key={o.id} className={per === 6 ? "invoice-6up" : per === 4 ? "invoice-4up" : "invoice-2up"}>
+            <Invoice order={o} zoneLabel={zoneName(o.deliveryZone)} zoneNote={zoneNote(o.deliveryZone)} compact={per !== 2} />
           </div>
         ))}
       </div>

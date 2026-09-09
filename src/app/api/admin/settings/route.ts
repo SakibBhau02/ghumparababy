@@ -15,6 +15,16 @@ import {
   sanitizeWhatsappConfig,
   type WhatsappConfig,
 } from "@/lib/whatsapp-shared";
+import { getTelegramConfig, saveTelegramConfig } from "@/lib/telegram";
+import {
+  sanitizeTelegramConfig,
+  type TelegramConfig,
+} from "@/lib/telegram-shared";
+import { getSteadfastConfig, saveSteadfastConfig } from "@/lib/steadfast";
+import {
+  sanitizeSteadfastConfig,
+  type SteadfastConfig,
+} from "@/lib/steadfast-shared";
 import { isAdminRequest } from "@/lib/admin-auth";
 
 const MAX_CHARGE = 999;
@@ -24,13 +34,15 @@ export async function GET(req: NextRequest) {
   if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "অনুমতি নেই।" }, { status: 401 });
   }
-  const [config, products, locationEnabled, whatsapp] = await Promise.all([
+  const [config, products, locationEnabled, whatsapp, telegram, steadfast] = await Promise.all([
     getDeliveryConfig(),
     getProductConfig(),
     getLocationEnabled(),
     getWhatsappConfig(),
+    getTelegramConfig(),
+    getSteadfastConfig(),
   ]);
-  return NextResponse.json({ config, products, locationEnabled, whatsapp });
+  return NextResponse.json({ config, products, locationEnabled, whatsapp, telegram, steadfast });
 }
 
 /**
@@ -47,32 +59,46 @@ export async function PUT(req: NextRequest) {
   try {
     const body = (await req.json()) as {
       charges?: Record<string, number>;
+      notes?: Record<string, unknown>;
       products?: unknown;
       locationEnabled?: unknown;
       whatsapp?: unknown;
+      telegram?: unknown;
+      steadfast?: unknown;
     };
     const result: {
       config?: DeliveryConfig;
       products?: ProductConfig;
       locationEnabled?: boolean;
       whatsapp?: WhatsappConfig;
+      telegram?: TelegramConfig;
+      steadfast?: SteadfastConfig;
     } = {};
 
-    if (body.charges !== undefined) {
+    if (body.charges !== undefined || body.notes !== undefined) {
       const charges = body.charges;
-      if (!charges || typeof charges !== "object") {
+      const notes = body.notes;
+      if (
+        (charges !== undefined && (!charges || typeof charges !== "object")) ||
+        (notes !== undefined && (!notes || typeof notes !== "object"))
+      ) {
         return NextResponse.json({ error: "অবৈধ রিকোয়েস্ট।" }, { status: 400 });
       }
       const current = await getDeliveryConfig();
-      // Update charges for existing zones only (labels/ids are fixed)
+      // Update charges + custom notes for existing zones only (labels/ids are fixed)
       const zones = current.zones.map((z) => {
-        const raw = charges[z.id];
-        let charge = 0;
-        const parsed = raw === undefined || raw === null ? NaN : Number(raw);
-        if (Number.isFinite(parsed)) {
-          charge = Math.min(Math.max(Math.round(parsed), 0), MAX_CHARGE);
+        const raw = charges?.[z.id];
+        let charge = z.charge;
+        if (raw !== undefined && raw !== null) {
+          const parsed = Number(raw);
+          charge = Number.isFinite(parsed)
+            ? Math.min(Math.max(Math.round(parsed), 0), MAX_CHARGE)
+            : 0;
         }
-        return { ...z, charge };
+        const rawNote = notes?.[z.id];
+        const note =
+          typeof rawNote === "string" ? rawNote.trim().slice(0, 140) : z.note;
+        return { ...z, charge, note };
       });
       const config: DeliveryConfig = { zones };
       await saveDeliveryConfig(config);
@@ -80,10 +106,10 @@ export async function PUT(req: NextRequest) {
     }
 
     if (body.products !== undefined) {
-      const sane = sanitizeProductConfig({ packages: body.products });
+      const sane = sanitizeProductConfig(body.products);
       if (!sane) {
         return NextResponse.json(
-          { error: "প্যাকেজের দাম সঠিক নয়।" },
+          { error: "দাম ঠিক নেই — প্রতি পিসের দাম পরিমাণ বাড়লে কখনো বাড়তে পারবে না।" },
           { status: 400 }
         );
       }
@@ -109,6 +135,30 @@ export async function PUT(req: NextRequest) {
       }
       await saveWhatsappConfig(sane);
       result.whatsapp = sane;
+    }
+
+    if (body.telegram !== undefined) {
+      const sane = sanitizeTelegramConfig(body.telegram);
+      if (!sane) {
+        return NextResponse.json(
+          { error: "Telegram সেটিংস সঠিক নয়।" },
+          { status: 400 }
+        );
+      }
+      await saveTelegramConfig(sane);
+      result.telegram = sane;
+    }
+
+    if (body.steadfast !== undefined) {
+      const sane = sanitizeSteadfastConfig(body.steadfast);
+      if (!sane) {
+        return NextResponse.json(
+          { error: "Steadfast সেটিংস সঠিক নয়।" },
+          { status: 400 }
+        );
+      }
+      await saveSteadfastConfig(sane);
+      result.steadfast = sane;
     }
 
     if (Object.keys(result).length === 0) {

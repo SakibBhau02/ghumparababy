@@ -12,7 +12,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
-import { PACKAGE_META, type ProductConfig } from "@/lib/product-shared";
+import {
+  MAX_QTY,
+  isFreeShipping,
+  packageNameForQty,
+  priceForQty,
+  type ProductConfig,
+} from "@/lib/product-shared";
 import { zoneCharge, type DeliveryZone } from "@/lib/delivery-shared";
 import { AddressCascade } from "@/components/landing/address-cascade";
 import type { LocationSelection } from "@/lib/bd-geo";
@@ -28,6 +34,7 @@ export type EditableOrder = {
   upazila: string;
   colors: string;
   color: string;
+  adminNote: string;
   packageName: string;
   quantity: number;
   deliveryZone: string;
@@ -46,23 +53,8 @@ function parseColors(raw: string, fallback: string): string[] {
   return [fallback];
 }
 
-function parsePackage(
-  packageName: string,
-  quantity: number
-): { packageId: string; count: number } {
-  if (packageName.startsWith("কাস্টম")) {
-    return { packageId: "custom", count: Math.min(Math.max(quantity, 1), 30) };
-  }
-  for (const [id, meta] of Object.entries(PACKAGE_META)) {
-    if (id === "custom") continue;
-    if (packageName.startsWith(meta.formName)) {
-      return {
-        packageId: id,
-        count: Math.min(Math.max(Math.round(quantity / meta.quantity) || 1, 1), 10),
-      };
-    }
-  }
-  return { packageId: "single", count: 1 };
+function parseQty(quantity: number): number {
+  return Math.min(Math.max(Math.round(quantity) || 1, 1), 30);
 }
 
 const inputCls =
@@ -84,15 +76,15 @@ export function OrderEditModal({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onSaved: (updated: any) => void;
 }) {
-  const initial = parsePackage(order.packageName, order.quantity);
+  const initial = parseQty(order.quantity);
   const [name, setName] = useState(order.name);
   const [phone, setPhone] = useState(order.phone);
   const [address, setAddress] = useState(order.address);
-  const [packageId, setPackageId] = useState(initial.packageId);
-  const [count, setCount] = useState(initial.count);
+  const [qty, setQty] = useState(initial);
   const [colors, setColors] = useState<string[]>(
     parseColors(order.colors, order.color)
   );
+  const [adminNote, setAdminNote] = useState(order.adminNote ?? "");
   const [zone, setZone] = useState(order.deliveryZone);
   const [location, setLocation] = useState<LocationSelection>({
     division: order.division,
@@ -102,15 +94,11 @@ export function OrderEditModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const pkgPrice = products.packages.find((p) => p.id === packageId)?.price ?? 0;
-  const isCustom = packageId === "custom";
-  const maxCount = isCustom ? 30 : 10;
-  const totalItems = isCustom
-    ? count
-    : (PACKAGE_META[packageId as keyof typeof PACKAGE_META]?.quantity ?? 1) * count;
+  const { perPiece, total: itemsTotal } = priceForQty(products, qty);
+  const totalItems = qty;
   const needsZone = zones.some((z) => z.charge > 0);
-  const charge = needsZone ? zoneCharge({ zones }, zone) : 0;
-  const previewTotal = pkgPrice * count + charge;
+  const charge = needsZone ? (isFreeShipping(qty) ? 0 : zoneCharge({ zones }, zone)) : 0;
+  const previewTotal = itemsTotal + charge;
 
   // Keep one color slot per item
   useEffect(() => {
@@ -137,10 +125,10 @@ export function OrderEditModal({
             division: location.division,
             district: location.district,
             upazila: location.upazila,
-            packageId,
-            count,
+            qty,
             colors,
             zone,
+            note: adminNote,
           },
         }),
       });
@@ -186,32 +174,27 @@ export function OrderEditModal({
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <Label>প্যাকেজ</Label>
-              <select
-                value={packageId}
-                onChange={(e) => setPackageId(e.target.value)}
-                className={`${inputCls} h-11`}
-              >
-                {products.packages.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {PACKAGE_META[p.id].priceName} — ৳{toBn(p.price)}
-                  </option>
-                ))}
-              </select>
+              <div className={`${inputCls} flex h-11 items-center font-bold`}>
+                {packageNameForQty(qty)}
+              </div>
             </div>
             <div>
-              <Label>{isCustom ? "পিস সংখ্যা (১–৩০)" : "সেট সংখ্যা (×১–১০)"}</Label>
+              <Label>পিস সংখ্যা (১–৩০)</Label>
               <Input
                 type="number"
                 min={1}
-                max={maxCount}
-                value={count}
+                max={30}
+                value={qty}
                 onChange={(e) =>
-                  setCount(Math.min(Math.max(Number(e.target.value) || 1, 1), maxCount))
+                  setQty(Math.min(Math.max(Number(e.target.value) || 1, 1), 30))
                 }
                 className={inputCls}
               />
             </div>
           </div>
+          <p className="-mt-1 text-xs text-muted-foreground">
+            ৳{toBn(perPiece)}/পিস {isFreeShipping(qty) ? "• ৩+ পিসে ডেলিভারি ফ্রি 🎉" : `• আরও ${toBn(3 - qty)}টি নিলে ডেলিভারি ফ্রি`} • সর্বোচ্চ নতুন অর্ডার {toBn(MAX_QTY)}টি
+          </p>
           <div>
             <Label>কালার ({toBn(totalItems)}টি)</Label>
             <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -234,6 +217,17 @@ export function OrderEditModal({
                 </div>
               ))}
             </div>
+          </div>
+          <div>
+            <Label>📝 Admin নোট <span className="font-normal text-muted-foreground">(শুধু আপনার জন্য — কাস্টমার/invoice-তে যাবে না)</span></Label>
+            <Textarea
+              value={adminNote}
+              onChange={(e) => setAdminNote(e.target.value)}
+              rows={2}
+              maxLength={500}
+              placeholder="যেমন: ২বার কল, ধরেনি — সন্ধ্যায় আবার কল দিতে হবে"
+              className="mt-1.5 rounded-xl border-border"
+            />
           </div>
           {needsZone && (
             <div>

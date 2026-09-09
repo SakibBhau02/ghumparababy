@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toBn } from "@/lib/landing-data";
 import type { ProductConfig } from "@/lib/product-shared";
+import { priceForQty } from "@/lib/product-shared";
 import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { ShieldCheck, Truck, BadgeCheck, Star, ChevronDown } from "lucide-react";
 
@@ -13,7 +14,7 @@ export function Hero({
   deliveryConfig: DeliveryConfig;
   productConfig: ProductConfig;
 }) {
-  const singlePrice = productConfig.packages.find((p) => p.id === "single")?.price ?? 549;
+  const singlePrice = priceForQty(productConfig, 1).total;
   const free = isAllFree(deliveryConfig);
   return (
     <section id="top" className="relative overflow-hidden pt-28 sm:pt-32">

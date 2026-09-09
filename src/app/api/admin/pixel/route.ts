@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ config });
 }
 
-/** PUT: কনফিগ সেভ — body: { input?, pixelId?, enabled?, events? } */
+/** PUT: কনফিগ সেভ — body: { input?, pixelId?, enabled?, events?, capiToken?, testEventCode? } */
 export async function PUT(req: NextRequest) {
   if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "অনুমতি নেই।" }, { status: 401 });
@@ -33,6 +33,8 @@ export async function PUT(req: NextRequest) {
       pixelId?: string; // সরাসরি ID (input না দিলে)
       enabled?: boolean;
       events?: unknown;
+      capiToken?: unknown; // Conversions API access token
+      testEventCode?: unknown; // Test Events ট্যাবের কোড (optional)
     };
 
     const current = await getPixelConfig();
@@ -75,7 +77,17 @@ export async function PUT(req: NextRequest) {
       ? sanitizePixelEvents(body.events)
       : current.events;
 
-    const config = sanitizePixelConfig({ pixelId, enabled, events });
+    // ৪) Conversions API token + test event code (দুটোই optional)
+    const capiToken =
+      body.capiToken !== undefined
+        ? String(body.capiToken).trim().slice(0, 500)
+        : current.capiToken;
+    const testEventCode =
+      body.testEventCode !== undefined
+        ? String(body.testEventCode).trim().slice(0, 64)
+        : current.testEventCode;
+
+    const config = sanitizePixelConfig({ pixelId, enabled, events, capiToken, testEventCode });
     await savePixelConfig(config);
 
     return NextResponse.json({ ok: true, config });

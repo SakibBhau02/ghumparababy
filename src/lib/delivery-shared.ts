@@ -3,15 +3,18 @@
  * Server-side config read/write lives in src/lib/delivery.ts
  */
 
-export type DeliveryZone = { id: string; label: string; charge: number };
+export type DeliveryZone = { id: string; label: string; charge: number; note: string };
 export type DeliveryConfig = { zones: DeliveryZone[] };
 
 export const DEFAULT_DELIVERY_CONFIG: DeliveryConfig = {
   zones: [
-    { id: "inside_dhaka", label: "ঢাকার ভিতরে", charge: 60 },
-    { id: "outside_dhaka", label: "ঢাকার বাইরে", charge: 120 },
+    { id: "inside_dhaka", label: "ঢাকার ভিতরে", charge: 60, note: "" },
+    { id: "outside_dhaka", label: "ঢাকার বাইরে", charge: 120, note: "" },
   ],
 };
+
+/** Max length of the admin's custom note per zone. */
+export const ZONE_NOTE_MAX = 140;
 
 /** Charge for a zone (0 when unknown / free). */
 export function zoneCharge(

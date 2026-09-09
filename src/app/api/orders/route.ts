@@ -6,15 +6,24 @@ import { loadBdGeo } from "@/lib/bd-geo-server";
 import { isValidLocationChain } from "@/lib/bd-geo";
 import { getProductConfig } from "@/lib/product";
 import { getLocationEnabled } from "@/lib/site-settings";
-import { PACKAGE_META, getPackage, perPiecePrice } from "@/lib/product-shared";
-import { toBn } from "@/lib/landing-data";
+import { getTelegramConfig, sendNewOrderAlert } from "@/lib/telegram";
+import { isTelegramReady } from "@/lib/telegram-shared";
+import { sendPurchaseCapi } from "@/lib/capi";
+import { getPixelConfig } from "@/lib/pixel-config";
+import { isCapiReady } from "@/lib/pixel-shared";
+import {
+  MAX_QTY,
+  isFreeShipping,
+  packageNameForQty,
+  priceForQty,
+} from "@/lib/product-shared";
 
 const COLORS = ["blue", "pink", "red", "beige", "cream", "grey"];
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, phone, address, division, district, upazila, colors, multiplier, customQty, color, pkg, note, zone } = body as {
+    const { name, phone, address, division, district, upazila, colors, qty, color, zone } = body as {
       name?: string;
       phone?: string;
       address?: string;
@@ -22,11 +31,8 @@ export async function POST(req: NextRequest) {
       district?: string;
       upazila?: string;
       colors?: unknown;
-      multiplier?: unknown;
-      customQty?: unknown;
+      qty?: unknown;
       color?: string;
-      pkg?: string;
-      note?: string;
       zone?: string;
     };
 
@@ -81,23 +87,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const selected = getPackage(productConfig, pkg ?? "");
-    if (!pkg || !selected) {
-      return NextResponse.json(
-        { error: "অনুগ্রহ করে একটি প্যাকেজ নির্বাচন করুন।" },
-        { status: 400 }
-      );
-    }
-
-    // Multiplier: same package ×N (1..10). Custom packs use an exact piece count.
-    const isCustom = selected.id === "custom";
-    const mult = isCustom
-      ? 1
-      : Math.min(Math.max(Math.round(Number(multiplier)) || 1, 1), 10);
-    const customCount = isCustom
-      ? Math.min(Math.max(Math.round(Number(customQty)) || 4, 1), 30)
-      : 0;
-    const totalItems = isCustom ? customCount : selected.quantity * mult;
+    // Quantity stepper (1..MAX_QTY) + volume-discount tier table.
+    // Server is the source of truth: per-piece price + total come from tiers.
+    const totalItems = Math.min(Math.max(Math.round(Number(qty)) || 0, 1), MAX_QTY);
+    const { perPiece, total: productPrice } = priceForQty(productConfig, totalItems);
 
     // One color per item (single color string accepted for backward compat)
     const pickedColors = Array.isArray(colors)
@@ -114,9 +107,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const productPrice = isCustom ? selected.price * customCount : selected.price * mult;
-
     // --- Delivery charge (server-side source of truth: admin settings) ---
+    // Volume perk: 3+ pieces in one order → free delivery (all zones).
+    const freeShip = isFreeShipping(totalItems);
     const deliveryConfig = await getDeliveryConfig();
     const needsZone = deliveryConfig.zones.some((z) => z.charge > 0);
     let deliveryCharge = 0;
@@ -131,7 +124,7 @@ export async function POST(req: NextRequest) {
         );
       }
       deliveryZone = zone;
-      deliveryCharge = zoneCharge(deliveryConfig, zone);
+      deliveryCharge = freeShip ? 0 : zoneCharge(deliveryConfig, zone);
     }
 
     const totalPrice = productPrice + deliveryCharge;
@@ -155,13 +148,9 @@ export async function POST(req: NextRequest) {
         upazila: location.upazila,
         color: pickedColors[0],
         colors: JSON.stringify(pickedColors),
-        packageName: isCustom
-          ? `কাস্টম (${toBn(customCount)}টি)`
-          : mult > 1
-            ? `${PACKAGE_META[selected.id].formName} ×${mult}`
-            : PACKAGE_META[selected.id].formName,
+        packageName: packageNameForQty(totalItems),
         quantity: totalItems,
-        unitPrice: perPiecePrice(selected),
+        unitPrice: perPiece,
         deliveryZone,
         deliveryCharge,
         totalPrice,
@@ -200,6 +189,66 @@ export async function POST(req: NextRequest) {
 
     // Durable backup (append-only ledger + CSV copies) — never blocks the order
     await appendOrderBackup(order);
+
+    // Meta Conversions API: server-side Purchase (never blocks the order).
+    // event_id = orderCode dedupes against the browser pixel event.
+    try {
+      const pixelConfig = await getPixelConfig();
+      if (isCapiReady(pixelConfig) && pixelConfig.events.purchase) {
+        const fwd = req.headers.get("x-forwarded-for") ?? "";
+        const result = await sendPurchaseCapi(pixelConfig, {
+          orderCode: order.orderCode,
+          totalPrice: order.totalPrice,
+          phone: order.phone,
+          clientIp: fwd.split(",")[0].trim(),
+          userAgent: req.headers.get("user-agent") ?? "",
+        });
+        if (!result.ok) {
+          console.error("capi send failed:", order.orderCode, result.error);
+        }
+      }
+    } catch (e) {
+      console.error("capi send crashed:", e);
+    }
+
+    // Telegram order alert to admin chat (never blocks the order)
+    try {
+      const tgConfig = await getTelegramConfig();
+      if (isTelegramReady(tgConfig)) {
+        let alertColors: string[] = [];
+        try {
+          const parsed = JSON.parse(order.colors) as unknown;
+          if (Array.isArray(parsed)) {
+            alertColors = parsed.filter((c): c is string => typeof c === "string");
+          }
+        } catch {
+          alertColors = [order.color];
+        }
+        const zoneLabel =
+          deliveryConfig.zones.find((z) => z.id === deliveryZone)?.label ?? deliveryZone;
+        const result = await sendNewOrderAlert(tgConfig, {
+          orderCode: order.orderCode,
+          name: order.name,
+          phone: order.phone,
+          address: order.address,
+          division: order.division,
+          district: order.district,
+          upazila: order.upazila,
+          packageName: order.packageName,
+          colors: alertColors,
+          quantity: order.quantity,
+          unitPrice: order.unitPrice,
+          deliveryZoneLabel: zoneLabel,
+          deliveryCharge: order.deliveryCharge,
+          totalPrice: order.totalPrice,
+        });
+        if (!result.ok) {
+          console.error("telegram send failed:", order.orderCode, result.error);
+        }
+      }
+    } catch (e) {
+      console.error("telegram send crashed:", e);
+    }
 
     return NextResponse.json({
       success: true,
