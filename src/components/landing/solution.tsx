@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import type { ProductConfig } from "@/lib/product-shared";
 import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { ShieldCheck, Snowflake, BedDouble, Droplets, Feather, HeartHandshake } from "lucide-react";
 
@@ -37,7 +38,14 @@ const BENEFITS = [
   },
 ];
 
-export function Solution({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
+export function Solution({
+  deliveryConfig,
+  productConfig,
+}: {
+  deliveryConfig: DeliveryConfig;
+  productConfig: ProductConfig;
+}) {
+  const singlePrice = productConfig.packages.find((p) => p.id === "single")?.price ?? 549;
   return (
     <section id="solution" className="py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4">
@@ -125,7 +133,7 @@ export function Solution({ deliveryConfig }: { deliveryConfig: DeliveryConfig })
             </Button>
           </a>
           <p className="mt-2 text-sm text-muted-foreground">
-            ৳{549} থেকে শুরু • ক্যাশ অন ডেলিভারি • {isAllFree(deliveryConfig) ? "ফ্রি ডেলিভারি" : "সারা দেশে ডেলিভারি"}
+            ৳{singlePrice} থেকে শুরু • ক্যাশ অন ডেলিভারি • {isAllFree(deliveryConfig) ? "ফ্রি ডেলিভারি" : "সারা দেশে ডেলিভারি"}
           </p>
         </div>
       </div>

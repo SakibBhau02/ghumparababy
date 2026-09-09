@@ -14,14 +14,22 @@ import { useToast } from "@/hooks/use-toast";
 import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
 import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import {
+  PACKAGE_META,
+  perPiecePrice,
+  type ProductConfig,
+} from "@/lib/product-shared";
+import { Switch } from "@/components/ui/switch";
+import {
   Activity,
   BadgeCheck,
   Clock,
   Download,
+  MapPin,
   Package,
   LogOut,
   Phone,
   RefreshCw,
+  Tag,
   TrendingUp,
   Truck,
   Wallet,
@@ -35,6 +43,9 @@ type OrderLike = {
   name: string;
   phone: string;
   address: string;
+  division: string;
+  district: string;
+  upazila: string;
   color: string;
   packageName: string;
   quantity: number;
@@ -101,9 +112,13 @@ function colorLabel(id: string): string {
 export function AdminDashboard({
   initialOrders,
   deliveryConfig: initialConfig,
+  productConfig: initialProducts,
+  locationEnabled: initialLocationEnabled,
 }: {
   initialOrders: OrderLike[];
   deliveryConfig: DeliveryConfig;
+  productConfig: ProductConfig;
+  locationEnabled: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -113,6 +128,19 @@ export function AdminDashboard({
     Object.fromEntries(initialConfig.zones.map((z) => [z.id, String(z.charge)]))
   );
   const [savingSettings, setSavingSettings] = useState(false);
+  const [products, setProducts] = useState<ProductConfig>(initialProducts);
+  const [priceInputs, setPriceInputs] = useState<Record<string, { price: string; oldPrice: string }>>(
+    () =>
+      Object.fromEntries(
+        initialProducts.packages.map((p) => [
+          p.id,
+          { price: String(p.price), oldPrice: String(p.oldPrice) },
+        ])
+      )
+  );
+  const [savingProducts, setSavingProducts] = useState(false);
+  const [locOn, setLocOn] = useState<boolean>(initialLocationEnabled);
+  const [savingLoc, setSavingLoc] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<string>("all");
@@ -207,6 +235,74 @@ export function AdminDashboard({
       toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
     } finally {
       setSavingSettings(false);
+    }
+  };
+  const saveProducts = async () => {
+    setSavingProducts(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          products: products.packages.map((p) => ({
+            id: p.id,
+            price: Number(priceInputs[p.id]?.price),
+            oldPrice: Number(priceInputs[p.id]?.oldPrice),
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "সেভ হয়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setProducts(data.products);
+      setPriceInputs(
+        Object.fromEntries(
+          data.products.packages.map((p: { id: string; price: number; oldPrice: number }) => [
+            p.id,
+            { price: String(p.price), oldPrice: String(p.oldPrice) },
+          ])
+        )
+      );
+      toast({
+        title: "প্যাকেজ প্রাইস সেভ হয়েছে",
+        description: "ওয়েবসাইটের সব জায়গায় নতুন দাম দেখা যাবে।",
+      });
+    } catch {
+      toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
+    } finally {
+      setSavingProducts(false);
+    }
+  };
+
+  const toggleLocation = async (v: boolean) => {
+    const prev = locOn;
+    setLocOn(v);
+    setSavingLoc(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locationEnabled: v }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "failed");
+      toast({
+        title: v ? "এলাকা সিলেকশন চালু হয়েছে" : "এলাকা সিলেকশন বন্ধ হয়েছে",
+        description: v
+          ? "অর্ডার ফর্মে বিভাগ/জেলা/উপজেলা দেখাবে।"
+          : "অর্ডার ফর্মে এলাকা ব্লক দেখাবে না।",
+      });
+    } catch {
+      setLocOn(prev);
+      toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
+    } finally {
+      setSavingLoc(false);
     }
   };
 
@@ -367,6 +463,111 @@ export function AdminDashboard({
           </div>
         </div>
 
+        {/* Product prices */}
+        <div className="mt-6 rounded-2xl border border-brand/40 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Tag className="size-5 text-brand" />
+              <div>
+                <h2 className="font-bold text-ink">প্যাকেজ প্রাইস সেটিংস</h2>
+                <p className="text-xs text-muted-foreground">
+                  দাম বদলে সেভ করলে প্রাইসিং সেকশন, অর্ডার ফর্ম ও অর্ডারের হিসাবে সাথে সাথে নতুন দাম বসবে।
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={saveProducts}
+              disabled={savingProducts}
+              className="rounded-full bg-brand font-bold text-white hover:bg-brand-deep disabled:opacity-60"
+            >
+              {savingProducts ? (
+                <>
+                  <RefreshCw className="mr-1.5 size-4 animate-spin" /> সেভ হচ্ছে...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-1.5 size-4" /> সেভ করুন
+                </>
+              )}
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {products.packages.map((p) => {
+              const meta = PACKAGE_META[p.id];
+              const inPrice = Number(priceInputs[p.id]?.price);
+              const inOld = Number(priceInputs[p.id]?.oldPrice);
+              return (
+                <div key={p.id} className="rounded-xl border border-border bg-cream/50 p-3.5">
+                  <label className="text-sm font-semibold text-ink">
+                    {meta.priceName}{" "}
+                    <span className="font-normal text-muted-foreground">({meta.qtyLabel})</span>
+                  </label>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-xs text-muted-foreground">বিক্রয় মূল্য (৳)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={999999}
+                        inputMode="numeric"
+                        value={priceInputs[p.id]?.price ?? "0"}
+                        onChange={(e) =>
+                          setPriceInputs((cur) => ({
+                            ...cur,
+                            [p.id]: { ...cur[p.id], price: e.target.value },
+                          }))
+                        }
+                        className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-base font-bold text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground">আগের মূল্য (৳)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={999999}
+                        inputMode="numeric"
+                        value={priceInputs[p.id]?.oldPrice ?? "0"}
+                        onChange={(e) =>
+                          setPriceInputs((cur) => ({
+                            ...cur,
+                            [p.id]: { ...cur[p.id], oldPrice: e.target.value },
+                          }))
+                        }
+                        className="mt-1 h-10 w-full rounded-lg border border-border bg-white px-3 text-base font-bold text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    প্রতি পিস: ৳
+                    {toBn(perPiecePrice({ price: inPrice || 0, quantity: meta.quantity }))}
+                    {inOld > inPrice ? ` • সাশ্রয়: ৳${toBn(inOld - inPrice)}` : ""}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Location block toggle */}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2">
+            <MapPin className="size-5 text-brand" />
+            <div>
+              <h2 className="font-bold text-ink">অর্ডার ফর্মে এলাকা সিলেকশন</h2>
+              <p className="text-xs text-muted-foreground">
+                চালু থাকলে কাস্টমারকে বিভাগ → জেলা → উপজেলা বেছে দিতে হবে। বন্ধ করলে ফর্মে এই ব্লক দেখাবে না।
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-muted-foreground">
+              {locOn ? "চালু" : "বন্ধ"}
+            </span>
+            <Switch checked={locOn} disabled={savingLoc} onCheckedChange={toggleLocation} />
+          </div>
+        </div>
+
         {/* Filter */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
           {[
@@ -440,6 +641,11 @@ export function AdminDashboard({
                       <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted-foreground">
                         {o.address}
                       </p>
+                      {[o.division, o.district, o.upazila].some(Boolean) && (
+                        <p className="mt-1 max-w-xl text-sm font-medium leading-relaxed text-ink">
+                          📍 {[o.division, o.district, o.upazila].filter(Boolean).join(", ")}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-muted-foreground">{formatDate(o.createdAt)}</p>
                     </div>
 

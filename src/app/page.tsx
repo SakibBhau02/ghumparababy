@@ -15,15 +15,29 @@ import { StickyCTA } from "@/components/landing/sticky-cta";
 import { WhatsAppFloat } from "@/components/landing/whatsapp-float";
 import { FacebookPixel } from "@/components/landing/facebook-pixel";
 import { getDeliveryConfig } from "@/lib/delivery";
+import { getProductConfig } from "@/lib/product";
+import { getLocationEnabled } from "@/lib/site-settings";
 import { getPixelConfig } from "@/lib/pixel-config";
 import type { DeliveryConfig } from "@/lib/delivery-shared";
+import type { ProductConfig } from "@/lib/product-shared";
 import type { PixelConfig } from "@/lib/pixel-shared";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [deliveryConfig, pixelConfig]: [DeliveryConfig, PixelConfig] =
-    await Promise.all([getDeliveryConfig(), getPixelConfig()]);
+  const [deliveryConfig, pixelConfig, productConfig, locationEnabled]: [
+    DeliveryConfig,
+    PixelConfig,
+    ProductConfig,
+    boolean,
+  ] = await Promise.all([
+    getDeliveryConfig(),
+    getPixelConfig(),
+    getProductConfig(),
+    getLocationEnabled(),
+  ]);
+  const singlePrice =
+    productConfig.packages.find((p) => p.id === "single")?.price ?? 549;
 
   return (
     <main className="min-h-screen overflow-x-clip">
@@ -32,25 +46,29 @@ export default async function Home() {
           pixelId={pixelConfig.pixelId}
           events={pixelConfig.events}
           contentName="ঘুমপাড়া বেবি সোয়াডেল"
-          contentValue={549}
+          contentValue={singlePrice}
         />
       ) : null}
       <Header />
       {/* Emotional journey: Info → Fear → Relief → Proof → Offer → Action */}
-      <Hero deliveryConfig={deliveryConfig} />
+      <Hero deliveryConfig={deliveryConfig} productConfig={productConfig} />
       <MoroExplain />
       <StatsSection />
       <SymptomCheck />
-      <Solution deliveryConfig={deliveryConfig} />
+      <Solution deliveryConfig={deliveryConfig} productConfig={productConfig} />
       <Showcase />
       <HowToUse />
       <Testimonials />
-      <Pricing deliveryConfig={deliveryConfig} />
-      <OrderForm deliveryConfig={deliveryConfig} />
+      <Pricing deliveryConfig={deliveryConfig} productConfig={productConfig} />
+      <OrderForm
+        deliveryConfig={deliveryConfig}
+        productConfig={productConfig}
+        locationEnabled={locationEnabled}
+      />
       <FAQ deliveryConfig={deliveryConfig} />
       <FinalCTA deliveryConfig={deliveryConfig} />
       <Footer />
-      <StickyCTA deliveryConfig={deliveryConfig} />
+      <StickyCTA deliveryConfig={deliveryConfig} productConfig={productConfig} />
       <WhatsAppFloat />
     </main>
   );

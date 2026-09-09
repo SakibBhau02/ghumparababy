@@ -3,9 +3,17 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toBn } from "@/lib/landing-data";
+import type { ProductConfig } from "@/lib/product-shared";
 import { deliveryBadgeText, type DeliveryConfig } from "@/lib/delivery-shared";
 
-export function StickyCTA({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
+export function StickyCTA({
+  deliveryConfig,
+  productConfig,
+}: {
+  deliveryConfig: DeliveryConfig;
+  productConfig: ProductConfig;
+}) {
+  const singlePrice = productConfig.packages.find((p) => p.id === "single")?.price ?? 549;
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -33,7 +41,7 @@ export function StickyCTA({ deliveryConfig }: { deliveryConfig: DeliveryConfig }
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
         <div className="leading-tight">
           <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-ink">৳{toBn(549)}</span>
+            <span className="text-lg font-bold text-ink">৳{toBn(singlePrice)}</span>
             <span className="text-sm text-muted-foreground line-through">৳{toBn(899)}</span>
           </div>
           <div className="text-xs text-leaf font-medium">✓ ক্যাশ অন ডেলিভারি • {deliveryBadgeText(deliveryConfig)}</div>

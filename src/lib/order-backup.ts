@@ -21,6 +21,9 @@ export type BackupOrder = {
   name: string;
   phone: string;
   address: string;
+  division: string;
+  district: string;
+  upazila: string;
   color: string;
   packageName: string;
   quantity: number;
@@ -42,6 +45,9 @@ export const CSV_HEADERS = [
   "name",
   "phone",
   "address",
+  "division",
+  "district",
+  "upazila",
   "color",
   "packageName",
   "quantity",
@@ -70,6 +76,9 @@ export function ordersToCsv(orders: BackupOrder[]): string {
         o.name,
         o.phone,
         o.address,
+        o.division ?? "",
+        o.district ?? "",
+        o.upazila ?? "",
         o.color,
         o.packageName,
         o.quantity,

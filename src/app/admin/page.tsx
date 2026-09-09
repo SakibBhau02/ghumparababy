@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { ADMIN_COOKIE, verifyToken } from "@/lib/admin-auth";
 import { getDeliveryConfig } from "@/lib/delivery";
+import { getProductConfig } from "@/lib/product";
+import { getLocationEnabled } from "@/lib/site-settings";
 import { AdminDashboard } from "@/components/admin/dashboard";
 import type { Order } from "@prisma/client";
 
@@ -20,10 +22,19 @@ export default async function AdminPage() {
     redirect("/admin/login");
   }
 
-  const [orders, deliveryConfig] = await Promise.all([
+  const [orders, deliveryConfig, productConfig, locationEnabled] = await Promise.all([
     db.order.findMany({ orderBy: { createdAt: "desc" } }),
     getDeliveryConfig(),
+    getProductConfig(),
+    getLocationEnabled(),
   ]);
 
-  return <AdminDashboard initialOrders={orders} deliveryConfig={deliveryConfig} />;
+  return (
+    <AdminDashboard
+      initialOrders={orders}
+      deliveryConfig={deliveryConfig}
+      productConfig={productConfig}
+      locationEnabled={locationEnabled}
+    />
+  );
 }

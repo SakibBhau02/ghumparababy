@@ -1,43 +1,41 @@
 import { toBn } from "@/lib/landing-data";
 import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
+import { PACKAGE_META, type ProductConfig } from "@/lib/product-shared";
 import { Flame, Check } from "lucide-react";
 import { Countdown } from "./countdown";
 
-export function Pricing({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
+export function Pricing({
+  deliveryConfig,
+  productConfig,
+}: {
+  deliveryConfig: DeliveryConfig;
+  productConfig: ProductConfig;
+}) {
   const deliveryPerk = isAllFree(deliveryConfig) ? "ফ্রি ডেলিভারি" : "সারা দেশে ডেলিভারি";
 
-  const PACKAGE_LIST = [
-    {
-      id: "single",
-      name: "সিঙ্গেল প্যাক",
-      qty: "১টি সোয়াডেল",
-      price: 549,
-      oldPrice: 899,
-      save: 350,
-      tag: null as string | null,
-      perks: [deliveryPerk, "ক্যাশ অন ডেলিভারি"],
-    },
-    {
-      id: "combo2",
-      name: "কম্বো প্যাক",
-      qty: "২টি সোয়াডেল",
-      price: 999,
-      oldPrice: 1798,
-      save: 799,
-      tag: "সবচেয়ে জনপ্রিয়",
-      perks: ["২ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি"],
-    },
-    {
-      id: "combo3",
-      name: "ফ্যামিলি প্যাক",
-      qty: "৩টি সোয়াডেল",
-      price: 1399,
-      oldPrice: 2697,
-      save: 1298,
-      tag: "সেরা ভ্যালু",
-      perks: ["৩ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি", "গিফট র‍্যাপ ফ্রি"],
-    },
-  ];
+  const PACKAGE_LIST = productConfig.packages.map((p) => {
+    const meta = PACKAGE_META[p.id];
+    return {
+      id: p.id,
+      name: meta.priceName,
+      qty: meta.qtyLabel,
+      price: p.price,
+      oldPrice: p.oldPrice,
+      save: Math.max(p.oldPrice - p.price, 0),
+      tag:
+        p.id === "combo2"
+          ? "সবচেয়ে জনপ্রিয়"
+          : p.id === "combo3"
+            ? "সেরা ভ্যালু"
+            : null,
+      perks:
+        p.id === "single"
+          ? [deliveryPerk, "ক্যাশ অন ডেলিভারি"]
+          : p.id === "combo2"
+            ? ["২ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি"]
+            : ["৩ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি", "গিফট র‍্যাপ ফ্রি"],
+    };
+  });
 
   return (
     <section className="py-16 sm:py-20">

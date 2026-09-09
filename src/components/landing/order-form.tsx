@@ -9,23 +9,37 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { PRODUCT_COLORS, toBn, HOTLINE, HOTLINE_LINK } from "@/lib/landing-data";
 import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
+import { PACKAGE_META, perPiecePrice, type ProductConfig } from "@/lib/product-shared";
+import type { LocationSelection } from "@/lib/bd-geo";
+import { AddressCascade } from "@/components/landing/address-cascade";
 import { pixelTrack } from "@/lib/pixel";
 import { CheckCircle2, Loader2, Phone, ShieldCheck, Truck, ShoppingBag } from "lucide-react";
 
-const PACKAGE_OPTIONS = [
-  { id: "single", name: "সিঙ্গেল (১টি)", price: 549, unit: "৳৫৪৯/পিস" },
-  { id: "combo2", name: "কম্বো (২টি)", price: 999, unit: "৳৫০০/পিস — জনপ্রিয়" },
-  { id: "combo3", name: "ফ্যামিলি প্যাক (৩টি)", price: 1399, unit: "৳৪৬৬/পিস — সেরা ভ্যালু" },
-];
-
-export function OrderForm({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
+export function OrderForm({
+  deliveryConfig,
+  productConfig,
+  locationEnabled,
+}: {
+  deliveryConfig: DeliveryConfig;
+  productConfig: ProductConfig;
+  locationEnabled: boolean;
+}) {
   const { toast } = useToast();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [color, setColor] = useState<string>("pink");
-  const [pkg, setPkg] = useState<string>("combo2");
+  const [pkg, setPkg] = useState<string>(
+    productConfig.packages.some((p) => p.id === "combo2")
+      ? "combo2"
+      : (productConfig.packages[0]?.id ?? "combo2")
+  );
   const [zone, setZone] = useState<string>(deliveryConfig.zones[0]?.id ?? "");
+  const [location, setLocation] = useState<LocationSelection>({
+    division: "",
+    district: "",
+    upazila: "",
+  });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<{
     orderCode: string;
@@ -34,7 +48,18 @@ export function OrderForm({ deliveryConfig }: { deliveryConfig: DeliveryConfig }
     totalPrice: number;
   } | null>(null);
 
-  const selectedPkg = PACKAGE_OPTIONS.find((p) => p.id === pkg)!;
+  // Package options always follow the admin-configured prices.
+  const packageOptions = productConfig.packages.map((p) => {
+    const meta = PACKAGE_META[p.id];
+    return {
+      id: p.id,
+      name: meta.formName,
+      price: p.price,
+      unit: `৳${toBn(perPiecePrice({ price: p.price, quantity: meta.quantity }))}/পিস${meta.unitSuffix}`,
+    };
+  });
+
+  const selectedPkg = packageOptions.find((p) => p.id === pkg) ?? packageOptions[0];
   const selectedColor = PRODUCT_COLORS.find((c) => c.id === color)!;
 
   const zoneNeeded = !isAllFree(deliveryConfig);
@@ -60,7 +85,7 @@ export function OrderForm({ deliveryConfig }: { deliveryConfig: DeliveryConfig }
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone, address, color, pkg, zone }),
+        body: JSON.stringify({ name, phone, address, ...location, color, pkg, zone }),
       });
       const data = await res.json();
 
@@ -194,7 +219,7 @@ export function OrderForm({ deliveryConfig }: { deliveryConfig: DeliveryConfig }
                   <div>
                     <Label className="text-base font-bold text-ink">১. প্যাকেজ নির্বাচন করুন</Label>
                     <div className="mt-2.5 grid gap-2.5 sm:grid-cols-3">
-                      {PACKAGE_OPTIONS.map((p) => (
+                      {packageOptions.map((p) => (
                         <button
                           key={p.id}
                           type="button"
@@ -306,10 +331,21 @@ export function OrderForm({ deliveryConfig }: { deliveryConfig: DeliveryConfig }
                     </div>
                   </div>
 
+                  {/* Location cascade: Division → District → Upazila */}
+                  {locationEnabled && (
+                    <AddressCascade
+                      value={location}
+                      onChange={(v) => {
+                        setLocation(v);
+                        fireInitiate();
+                      }}
+                    />
+                  )}
+
                   {/* Delivery zone selection (only when charges apply) */}
                   {zoneNeeded && (
                     <div>
-                      <Label className="text-base font-bold text-ink">৪. ডেলিভারি এলাকা নির্বাচন করুন</Label>
+                      <Label className="text-base font-bold text-ink">{locationEnabled ? "৫" : "৪"}. ডেলিভারি এলাকা নির্বাচন করুন</Label>
                       <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
                         {deliveryConfig.zones.map((z) => (
                           <button

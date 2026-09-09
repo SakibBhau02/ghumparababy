@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Order {
@@ -16,6 +17,9 @@ model Order {
   name          String
   phone         String
   address       String
+  division      String   @default("")
+  district      String   @default("")
+  upazila       String   @default("")
   color         String
   packageName   String
   quantity      Int

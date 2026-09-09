@@ -2,22 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getDeliveryConfig, zoneCharge } from "@/lib/delivery";
 import { appendOrderBackup } from "@/lib/order-backup";
-
-const PACKAGES: Record<string, { label: string; quantity: number; unitPrice: number; totalPrice: number }> = {
-  single: { label: "সিঙ্গেল (১টি)", quantity: 1, unitPrice: 549, totalPrice: 549 },
-  combo2: { label: "কম্বো (২টি)", quantity: 2, unitPrice: 500, totalPrice: 999 },
-  combo3: { label: "ফ্যামিলি প্যাক (৩টি)", quantity: 3, unitPrice: 466, totalPrice: 1399 },
-};
+import { loadBdGeo } from "@/lib/bd-geo-server";
+import { isValidLocationChain } from "@/lib/bd-geo";
+import { getProductConfig } from "@/lib/product";
+import { getLocationEnabled } from "@/lib/site-settings";
+import { PACKAGE_META, getPackage, perPiecePrice } from "@/lib/product-shared";
 
 const COLORS = ["blue", "pink", "red", "beige", "cream", "grey"];
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, phone, address, color, pkg, note, zone } = body as {
+    const { name, phone, address, division, district, upazila, color, pkg, note, zone } = body as {
       name?: string;
       phone?: string;
       address?: string;
+      division?: string;
+      district?: string;
+      upazila?: string;
       color?: string;
       pkg?: string;
       note?: string;
@@ -47,6 +49,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // --- Prices + toggles (server-side source of truth: admin settings) ---
+    const [productConfig, locationEnabled] = await Promise.all([
+      getProductConfig(),
+      getLocationEnabled(),
+    ]);
+
+    // --- Location chain (Division → District → Upazila), admin-toggleable ---
+    const location = { division: "", district: "", upazila: "" };
+    if (locationEnabled) {
+      location.division = (division ?? "").trim();
+      location.district = (district ?? "").trim();
+      location.upazila = (upazila ?? "").trim();
+      try {
+        const geo = await loadBdGeo();
+        if (!isValidLocationChain(geo, location)) {
+          return NextResponse.json(
+            { error: "অনুগ্রহ করে সঠিক বিভাগ, জেলা ও উপজেলা নির্বাচন করুন।" },
+            { status: 400 }
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { error: "এলাকার তথ্য যাচাই করা যায়নি। আবার চেষ্টা করুন।" },
+          { status: 500 }
+        );
+      }
+    }
+
     if (!color || !COLORS.includes(color)) {
       return NextResponse.json(
         { error: "অনুগ্রহ করে একটি কালার নির্বাচন করুন।" },
@@ -54,15 +84,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!pkg || !PACKAGES[pkg]) {
+    const selected = getPackage(productConfig, pkg ?? "");
+    if (!pkg || !selected) {
       return NextResponse.json(
         { error: "অনুগ্রহ করে একটি প্যাকেজ নির্বাচন করুন।" },
         { status: 400 }
       );
     }
-
-    const selected = PACKAGES[pkg];
-    const productPrice = selected.totalPrice;
+    const productPrice = selected.price;
 
     // --- Delivery charge (server-side source of truth: admin settings) ---
     const deliveryConfig = await getDeliveryConfig();
@@ -98,10 +127,13 @@ export async function POST(req: NextRequest) {
         name: name.trim(),
         phone: cleanPhone,
         address: address.trim(),
+        division: location.division,
+        district: location.district,
+        upazila: location.upazila,
         color,
-        packageName: selected.label,
+        packageName: PACKAGE_META[selected.id].formName,
         quantity: selected.quantity,
-        unitPrice: selected.unitPrice,
+        unitPrice: perPiecePrice(selected),
         deliveryZone,
         deliveryCharge,
         totalPrice,

@@ -2,10 +2,18 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toBn } from "@/lib/landing-data";
+import type { ProductConfig } from "@/lib/product-shared";
 import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { ShieldCheck, Truck, BadgeCheck, Star, ChevronDown } from "lucide-react";
 
-export function Hero({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
+export function Hero({
+  deliveryConfig,
+  productConfig,
+}: {
+  deliveryConfig: DeliveryConfig;
+  productConfig: ProductConfig;
+}) {
+  const singlePrice = productConfig.packages.find((p) => p.id === "single")?.price ?? 549;
   const free = isAllFree(deliveryConfig);
   return (
     <section id="top" className="relative overflow-hidden pt-28 sm:pt-32">
@@ -66,7 +74,7 @@ export function Hero({ deliveryConfig }: { deliveryConfig: DeliveryConfig }) {
           {/* Price + CTA */}
           <div className="mt-6 flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
             <div className="flex items-baseline gap-3">
-              <span className="text-4xl font-bold text-brand">৳{toBn(549)}</span>
+              <span className="text-4xl font-bold text-brand">৳{toBn(singlePrice)}</span>
               <span className="text-xl text-muted-foreground line-through">৳{toBn(899)}</span>
               <span className="rounded-full bg-rust/10 px-3 py-1 text-sm font-semibold text-rust">
                 {toBn(39)}% ছাড়
