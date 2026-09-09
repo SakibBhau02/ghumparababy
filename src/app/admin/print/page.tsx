@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { ADMIN_COOKIE, verifyToken } from "@/lib/admin-auth";
+import { getDeliveryConfig } from "@/lib/delivery";
 import { PRODUCT_COLORS, toBn, HOTLINE } from "@/lib/landing-data";
 import { PrintButton } from "@/components/admin/print-button";
 import type { Order } from "@prisma/client";
@@ -35,8 +36,9 @@ function colorIds(order: Order): string[] {
   return [order.color];
 }
 
-function colorLabel(id: string): string {
-  return PRODUCT_COLORS.find((c) => c.id === id)?.label ?? id;
+function colorMeta(id: string): { label: string; hex: string } {
+  const found = PRODUCT_COLORS.find((c) => c.id === id);
+  return { label: found?.label ?? id, hex: found?.hex ?? "#CCCCCC" };
 }
 
 function productImage(order: Order): string {
@@ -48,20 +50,30 @@ function locationLine(order: Order): string {
   return [order.division, order.district, order.upazila].filter(Boolean).join(", ");
 }
 
-function Invoice({ order }: { order: Order }) {
+function Invoice({
+  order,
+  zoneLabel,
+  compact,
+}: {
+  order: Order;
+  zoneLabel: string;
+  compact: boolean;
+}) {
   const colors = colorIds(order);
   const loc = locationLine(order);
   return (
     <div className="invoice overflow-hidden rounded-xl border-2 border-ink bg-white">
       {/* Header */}
-      <div className="flex items-center justify-between border-b-2 border-ink px-4 py-2">
+      <div className="flex items-center justify-between border-b-2 border-ink bg-cream px-3 py-1.5">
         <div>
-          <div className="text-lg font-bold text-ink">🧸 ঘুমপাড়া বেবি</div>
-          <div className="text-xs text-muted-foreground">হটলাইন: {HOTLINE} (সকাল ৯টা — রাত ১০টা)</div>
+          <div className={`font-bold text-ink ${compact ? "text-sm" : "text-lg"}`}>
+            🧸 ঘুমপাড়া বেবি — ক্যাশ মেমো
+          </div>
+          <div className="text-[11px] text-muted-foreground">হটলাইন: {HOTLINE}</div>
         </div>
         <div className="text-right">
           <div className="font-mono text-sm font-bold text-ink">{order.orderCode}</div>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-[11px] text-muted-foreground">
             {new Date(order.createdAt).toLocaleDateString("bn-BD", {
               day: "numeric",
               month: "long",
@@ -71,73 +83,96 @@ function Invoice({ order }: { order: Order }) {
           </div>
         </div>
       </div>
+
       {/* Customer */}
-      <div className="grid grid-cols-2 gap-2 px-4 py-2 text-xs">
+      <div className="grid grid-cols-2 gap-2 px-3 py-1.5 text-xs">
         <div>
+          <div className="text-[10px] font-semibold uppercase text-muted-foreground">ক্রেতা</div>
           <div className="font-bold text-ink">{order.name}</div>
           <div className="font-semibold">📞 {order.phone}</div>
         </div>
-        <div className="text-right text-muted-foreground">
+        <div className="text-right">
+          <div className="text-[10px] font-semibold uppercase text-muted-foreground">ডেলিভারি ঠিকানা</div>
           <div>{order.address}</div>
-          {loc && <div>{loc}</div>}
+          {loc && <div className="font-medium text-ink">{loc}</div>}
+          {zoneLabel && <div className="text-muted-foreground">({zoneLabel})</div>}
         </div>
       </div>
-      {/* Items */}
+
+      {/* Items — full detail */}
       <table className="w-full border-t-2 border-ink text-xs">
         <thead>
           <tr className="bg-cream text-left text-muted-foreground">
-            <th className="px-4 py-1 font-semibold">পণ্য</th>
+            <th className="px-3 py-1 font-semibold">পণ্যের বিবরণ</th>
             <th className="px-2 py-1 text-center font-semibold">পরিমাণ</th>
-            <th className="px-2 py-1 text-right font-semibold">দর</th>
-            <th className="px-4 py-1 text-right font-semibold">মোট</th>
+            <th className="px-2 py-1 text-right font-semibold">দর (পিস)</th>
+            <th className="px-3 py-1 text-right font-semibold">মোট</th>
           </tr>
         </thead>
         <tbody>
-          <tr className="border-t border-border">
-            <td className="px-4 py-1.5">
-              <div className="flex items-center gap-2">
-                <span className="relative block size-10 shrink-0 overflow-hidden rounded-md border border-border">
+          <tr className="border-t border-border align-top">
+            <td className="px-3 py-1.5">
+              <div className="flex items-start gap-2">
+                <span
+                  className={`relative block shrink-0 overflow-hidden rounded-md border border-border ${compact ? "size-9" : "size-12"}`}
+                >
                   <Image
                     src={productImage(order)}
                     alt="সোয়াডেল"
                     fill
                     className="object-cover"
-                    sizes="40px"
+                    sizes="48px"
                   />
                 </span>
                 <span>
                   <span className="font-bold text-ink">{order.packageName}</span>
-                  <span className="block text-muted-foreground">
-                    কালার: {colors.map(colorLabel).join(", ")}
+                  <span className="mt-0.5 block font-semibold text-ink">
+                    কালার ({toBn(colors.length)}টি):
+                  </span>
+                  <span className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+                    {colors.map((id, i) => {
+                      const meta = colorMeta(id);
+                      return (
+                        <span key={`${id}-${i}`} className="inline-flex items-center gap-1">
+                          <span
+                            className="inline-block size-3 rounded-[3px] border border-black/30"
+                            style={{ backgroundColor: meta.hex }}
+                          />
+                          <span>
+                            {toBn(i + 1)}. {meta.label}
+                          </span>
+                        </span>
+                      );
+                    })}
                   </span>
                 </span>
               </div>
             </td>
-            <td className="px-2 py-1.5 text-center font-semibold">{toBn(order.quantity)}টি</td>
+            <td className="px-2 py-1.5 text-center font-bold">{toBn(order.quantity)}টি</td>
             <td className="px-2 py-1.5 text-right">৳{toBn(order.unitPrice)}</td>
-            <td className="px-4 py-1.5 text-right font-bold">
+            <td className="px-3 py-1.5 text-right font-bold">
               ৳{toBn(order.unitPrice * order.quantity)}
             </td>
           </tr>
           <tr className="border-t border-border">
-            <td colSpan={3} className="px-4 py-1 text-right text-muted-foreground">
-              ডেলিভারি চার্জ
+            <td colSpan={3} className="px-3 py-1 text-right text-muted-foreground">
+              ডেলিভারি চার্জ{zoneLabel ? ` (${zoneLabel})` : ""}
             </td>
-            <td className="px-4 py-1 text-right font-semibold">
+            <td className="px-3 py-1 text-right font-semibold">
               {order.deliveryCharge > 0 ? `৳${toBn(order.deliveryCharge)}` : "ফ্রি"}
             </td>
           </tr>
           <tr className="border-t-2 border-ink bg-cream">
-            <td colSpan={3} className="px-4 py-1.5 text-right font-bold text-ink">
+            <td colSpan={3} className="px-3 py-1.5 text-right font-bold text-ink">
               সর্বমোট (ক্যাশ অন ডেলিভারি)
             </td>
-            <td className="px-4 py-1.5 text-right text-base font-bold text-ink">
+            <td className="px-3 py-1.5 text-right text-base font-bold text-ink">
               ৳{toBn(order.totalPrice)}
             </td>
           </tr>
         </tbody>
       </table>
-      <div className="px-4 py-1.5 text-center text-[11px] text-muted-foreground">
+      <div className="px-3 py-1 text-center text-[11px] text-muted-foreground">
         পণ্য হাতে পেয়ে মূল্য পরিশোধ করুন • ধন্যবাদ! 🧸
       </div>
     </div>
@@ -166,7 +201,10 @@ export default async function PrintPage({
     redirect("/admin");
   }
 
-  const orders = await db.order.findMany({ where: { id: { in: ids } } });
+  const [orders, deliveryConfig] = await Promise.all([
+    db.order.findMany({ where: { id: { in: ids } } }),
+    getDeliveryConfig(),
+  ]);
   const byId = new Map(orders.map((o) => [o.id, o]));
   const list = ids
     .map((id) => byId.get(id))
@@ -174,27 +212,32 @@ export default async function PrintPage({
   if (list.length === 0) {
     redirect("/admin");
   }
+  const zoneName = (id: string) =>
+    deliveryConfig.zones.find((z) => z.id === id)?.label ?? "";
 
   const idsParam = encodeURIComponent(ids.join(","));
 
   return (
     <main className="min-h-screen bg-neutral-200 p-4">
       <style>{`
-        @page { size: A4; margin: 8mm; }
+        @page { size: A4; margin: 10mm 8mm; }
         @media print {
           .no-print { display: none !important; }
           main { background: white !important; padding: 0 !important; }
-          .invoice { border-radius: 0 !important; break-inside: avoid; }
+          .print-grid { display: block !important; max-width: none !important; }
+          .invoice { border-radius: 0 !important; break-inside: avoid-page; page-break-inside: avoid; }
+          .invoice-2up { height: 135mm; overflow: hidden; margin: 0 0 3mm 0 !important; }
+          .invoice-2up:nth-of-type(2n) { break-after: page; page-break-after: always; margin-bottom: 0 !important; }
+          .invoice-4up { height: 66mm; overflow: hidden; margin: 0 0 3mm 0 !important; }
+          .invoice-4up:nth-of-type(4n) { break-after: page; page-break-after: always; margin-bottom: 0 !important; }
         }
-        .invoice-2up { min-height: 130mm; }
-        @media print { .invoice-2up { height: 130mm; } }
+        .invoice-2up { min-height: 120mm; }
         .invoice-4up { min-height: 0; }
-        @media print { .invoice-4up { height: 63mm; overflow: hidden; } }
       `}</style>
 
       <div className="no-print mx-auto mb-4 flex max-w-4xl flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow">
         <div className="text-sm font-bold text-ink">
-          🖨️ {toBn(list.length)}টি ইনভয়েস
+          🖨️ {toBn(list.length)}টি ইনভয়েস — A4 পেজে {toBn(per)}টা করে
           <Link href="/admin" className="ml-3 font-semibold text-brand hover:underline">
             ← অ্যাডমিনে ফিরুন
           </Link>
@@ -217,11 +260,11 @@ export default async function PrintPage({
       </div>
 
       <div
-        className={`mx-auto grid max-w-4xl gap-4 ${per === 4 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}
+        className={`print-grid mx-auto grid max-w-4xl gap-4 ${per === 4 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}
       >
         {list.map((o) => (
           <div key={o.id} className={per === 4 ? "invoice-4up" : "invoice-2up"}>
-            <Invoice order={o} />
+            <Invoice order={o} zoneLabel={zoneName(o.deliveryZone)} compact={per === 4} />
           </div>
         ))}
       </div>
