@@ -3,6 +3,20 @@ import { db } from "@/lib/db";
 import { isAdminRequest } from "@/lib/admin-auth";
 import { getWhatsappConfig, sendOrderConfirmation } from "@/lib/whatsapp";
 import { isWhatsappReady } from "@/lib/whatsapp-shared";
+import { getProductConfig } from "@/lib/product";
+import {
+  PACKAGE_META,
+  getPackage,
+  perPiecePrice,
+} from "@/lib/product-shared";
+import { getDeliveryConfig, zoneCharge } from "@/lib/delivery";
+import { getLocationEnabled } from "@/lib/site-settings";
+import { loadBdGeo } from "@/lib/bd-geo-server";
+import { isValidLocationChain } from "@/lib/bd-geo";
+import { recomputeCustomer } from "@/lib/customers";
+import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
+
+const COLOR_IDS: string[] = PRODUCT_COLORS.map((c) => c.id);
 
 const STATUSES = ["pending", "confirmed", "shipped", "delivered", "cancelled"];
 
@@ -41,10 +55,11 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    const { id, status, pinned } = (await req.json()) as {
+    const { id, status, pinned, edit } = (await req.json()) as {
       id?: string;
       status?: string;
       pinned?: unknown;
+      edit?: unknown;
     };
 
     if (!id) {
@@ -61,6 +76,11 @@ export async function PATCH(req: NextRequest) {
         data: { pinned },
       });
       return NextResponse.json({ ok: true, order });
+    }
+
+    // Full order edit from the admin panel (recomputes all derived totals)
+    if (edit !== undefined && status === undefined && pinned === undefined) {
+      return handleOrderEdit(id, edit);
     }
 
     if (!status || !STATUSES.includes(status)) {
@@ -108,4 +128,131 @@ export async function PATCH(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/** DELETE /api/admin/orders?id= — delete an order (admin only). */
+export async function DELETE(req: NextRequest) {
+  if (!isAdminRequest(req)) {
+    return NextResponse.json({ error: "অনুমতি নেই।" }, { status: 401 });
+  }
+  try {
+    const id = new URL(req.url).searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "অবৈধ রিকোয়েস্ট।" }, { status: 400 });
+    }
+    const prev = await db.order.findUnique({ where: { id } });
+    if (!prev) {
+      return NextResponse.json({ error: "অর্ডার পাওয়া যায়নি।" }, { status: 404 });
+    }
+    await db.order.delete({ where: { id } });
+    // Tombstone so CSV export (which merges the file ledger) also hides it
+    const { addDeletedId } = await import("@/lib/order-backup");
+    await addDeletedId(id);
+    await recomputeCustomer(prev.phone);
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json(
+      { error: "ডিলিট করা যায়নি। আবার চেষ্টা করুন।" },
+      { status: 500 }
+    );
+  }
+}
+
+const bad = (error: string) =>
+  NextResponse.json({ error }, { status: 400 });
+
+/** Validate + apply a full admin edit, recomputing every derived field. */
+async function handleOrderEdit(id: string, edit: unknown) {
+  const e = (edit ?? {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const name = str(e.name);
+  const address = str(e.address);
+  const cleanPhone = str(e.phone).replace(/[\s-]/g, "");
+  if (name.length < 2) return bad("সঠিক নাম দিন।");
+  if (!/^01[3-9]\d{8}$/.test(cleanPhone)) return bad("সঠিক মোবাইল নম্বর দিন।");
+  if (address.length < 10) return bad("সম্পূর্ণ ঠিকানা দিন (কমপক্ষে ১০ অক্ষর)।");
+
+  const [productConfig, deliveryConfig, locationEnabled] = await Promise.all([
+    getProductConfig(),
+    getDeliveryConfig(),
+    getLocationEnabled(),
+  ]);
+  const selected = getPackage(productConfig, str(e.packageId));
+  if (!selected) return bad("প্যাকেজ সঠিক নয়।");
+  const isCustom = selected.id === "custom";
+  const count = Math.min(
+    Math.max(Math.round(Number(e.count)) || 1, 1),
+    isCustom ? 30 : 10
+  );
+  const totalItems = isCustom ? count : selected.quantity * count;
+  const picked = Array.isArray(e.colors)
+    ? e.colors.filter(
+        (c): c is string => typeof c === "string" && COLOR_IDS.includes(c)
+      )
+    : [];
+  if (picked.length !== totalItems) {
+    return bad(`কালার ${totalItems}টি হতে হবে (এখন ${picked.length}টি)।`);
+  }
+
+  const location = { division: "", district: "", upazila: "" };
+  if (locationEnabled) {
+    location.division = str(e.division);
+    location.district = str(e.district);
+    location.upazila = str(e.upazila);
+    try {
+      const geo = await loadBdGeo();
+      if (!isValidLocationChain(geo, location)) {
+        return bad("সঠিক বিভাগ, জেলা ও উপজেলা দিন।");
+      }
+    } catch {
+      return bad("এলাকার তথ্য যাচাই করা যায়নি।");
+    }
+  } else {
+    location.division = str(e.division);
+    location.district = str(e.district);
+    location.upazila = str(e.upazila);
+  }
+
+  const needsZone = deliveryConfig.zones.some((z) => z.charge > 0);
+  let deliveryZone = "";
+  let deliveryCharge = 0;
+  if (needsZone) {
+    const zid = str(e.zone);
+    if (!deliveryConfig.zones.some((z) => z.id === zid)) {
+      return bad("ডেলিভারি এলাকা সঠিক নয়।");
+    }
+    deliveryZone = zid;
+    deliveryCharge = zoneCharge(deliveryConfig, zid);
+  }
+
+  const prev = await db.order.findUnique({ where: { id } });
+  if (!prev) {
+    return NextResponse.json({ error: "অর্ডার পাওয়া যায়নি।" }, { status: 404 });
+  }
+  const order = await db.order.update({
+    where: { id },
+    data: {
+      name,
+      phone: cleanPhone,
+      address,
+      division: location.division,
+      district: location.district,
+      upazila: location.upazila,
+      color: picked[0],
+      colors: JSON.stringify(picked),
+      packageName: isCustom
+        ? `কাস্টম (${toBn(count)}টি)`
+        : count > 1
+          ? `${PACKAGE_META[selected.id].formName} ×${count}`
+          : PACKAGE_META[selected.id].formName,
+      quantity: totalItems,
+      unitPrice: perPiecePrice(selected),
+      deliveryZone,
+      deliveryCharge,
+      totalPrice: selected.price * count + deliveryCharge,
+    },
+  });
+  await recomputeCustomer(prev.phone);
+  if (cleanPhone !== prev.phone) await recomputeCustomer(cleanPhone);
+  return NextResponse.json({ ok: true, order });
 }

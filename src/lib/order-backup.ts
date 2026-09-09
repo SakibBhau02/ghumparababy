@@ -152,8 +152,11 @@ export async function mergedOrders(): Promise<BackupOrder[]> {
     console.error("order-backup: DB read failed", e);
   }
   const ledger = await readBackupRows();
+  const deleted = await getDeletedIds();
   const seen = new Set(dbRows.map((r) => r.id));
-  const extras = ledger.filter((r) => !r.id || !seen.has(r.id));
+  const extras = ledger.filter(
+    (r) => (!r.id || !seen.has(r.id)) && (!r.id || !deleted.has(r.id))
+  );
   return [...dbRows, ...extras].sort((a, b) => {
     const pin = Number(b.pinned ?? false) - Number(a.pinned ?? false);
     if (pin !== 0) return pin;
@@ -163,9 +166,40 @@ export async function mergedOrders(): Promise<BackupOrder[]> {
   });
 }
 
-/** Rewrite both CSV copies from the merged view. Never throws. */
-export async function writeBackups(): Promise<void> {
+const DELETED_KEY = "deleted_order_ids";
+
+/** IDs the admin deleted — hidden from list/export, ledger keeps them as audit. */
+export async function getDeletedIds(): Promise<Set<string>> {
   try {
+    const row = await db.setting.findUnique({ where: { key: DELETED_KEY } });
+    if (!row) return new Set();
+    const arr = JSON.parse(row.value) as unknown;
+    return new Set(
+      Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : []
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/** Remember a deleted order id (never throws). */
+export async function addDeletedId(id: string): Promise<void> {
+  try {
+    const ids = await getDeletedIds();
+    ids.add(id);
+    const value = JSON.stringify([...ids]);
+    await db.setting.upsert({
+      where: { key: DELETED_KEY },
+      update: { value },
+      create: { key: DELETED_KEY, value },
+    });
+  } catch (e) {
+    console.error("order-backup: tombstone failed", e);
+  }
+}
+
+/** Rewrite both CSV copies from the merged view. Never throws. */
+export async function writeBackups(): Promise<void> {  try {
     const orders = await mergedOrders();
     const csv = ordersToCsv(orders);
     await fs.mkdir(BACKUP_DIR, { recursive: true });

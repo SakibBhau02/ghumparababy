@@ -29,6 +29,7 @@ export function OrderForm({
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [mult, setMult] = useState<number>(1);
+  const [customQty, setCustomQty] = useState<number>(4);
   const [colors, setColors] = useState<string[]>(["pink"]);
   const [pkg, setPkg] = useState<string>(
     productConfig.packages.some((p) => p.id === "combo2")
@@ -62,7 +63,9 @@ export function OrderForm({
 
   const selectedPkg = packageOptions.find((p) => p.id === pkg) ?? packageOptions[0];
   const selectedQty = getPackage(productConfig, selectedPkg.id)?.quantity ?? 1;
-  const totalItems = selectedQty * mult;
+  const isCustom = selectedPkg.id === "custom";
+  const totalItems = isCustom ? customQty : selectedQty * mult;
+  const pkgTotal = isCustom ? selectedPkg.price * customQty : selectedPkg.price * mult;
   const firstColor = PRODUCT_COLORS.find((c) => c.id === colors[0]) ?? PRODUCT_COLORS[1];
 
   // Keep exactly one color slot per item when package/multiplier changes
@@ -76,7 +79,7 @@ export function OrderForm({
 
   const zoneNeeded = !isAllFree(deliveryConfig);
   const currentCharge = zoneNeeded ? zoneCharge(deliveryConfig, zone) : 0;
-  const grandTotal = selectedPkg.price * mult + currentCharge;
+  const grandTotal = pkgTotal + currentCharge;
 
   // Meta Pixel: InitiateCheckout fires once, on the user's first interaction with the order form
   const initiated = useRef(false);
@@ -97,7 +100,7 @@ export function OrderForm({
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone, address, ...location, colors, multiplier: mult, pkg, zone }),
+        body: JSON.stringify({ name, phone, address, ...location, colors, multiplier: mult, customQty, pkg, zone }),
       });
       const data = await res.json();
 
@@ -230,14 +233,16 @@ export function OrderForm({
                   {/* Package selection */}
                   <div>
                     <Label className="text-base font-bold text-ink">১. প্যাকেজ নির্বাচন করুন</Label>
-                    <div className="mt-2.5 grid gap-2.5 sm:grid-cols-3">
+                    <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
                       {packageOptions.map((p) => (
                         <button
                           key={p.id}
                           type="button"
                             onClick={() => {
                               setPkg(p.id);
-                              fireInitiate(p.price * mult);
+                              fireInitiate(
+                                p.id === "custom" ? p.price * customQty : p.price * mult
+                              );
                             }}
                           aria-pressed={pkg === p.id}
                           className={`rounded-2xl border-2 p-3.5 text-left transition-all ${
@@ -258,39 +263,74 @@ export function OrderForm({
                     </div>
                   </div>
 
-                  {/* Quantity multiplier */}
-                  <div className="mt-5">
-                    <Label className="text-base font-bold text-ink">পরিমাণ</Label>
-                    <div className="mt-2.5 flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setMult((m) => Math.max(1, m - 1))}
-                        disabled={mult <= 1}
-                        aria-label="পরিমাণ কমান"
-                        className="grid size-11 place-items-center rounded-full border-2 border-border text-xl font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
-                      >
-                        −
-                      </button>
-                      <span className="min-w-20 text-center text-lg font-bold text-ink">
-                        {toBn(mult)}×{" "}
-                        <span className="text-sm font-normal text-muted-foreground">
-                          ({toBn(totalItems)}টি)
+                  {/* Quantity multiplier / custom piece count */}
+                  {isCustom ? (
+                    <div className="mt-5">
+                      <Label className="text-base font-bold text-ink">পিস সংখ্যা</Label>
+                      <div className="mt-2.5 flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setCustomQty((n) => Math.max(1, n - 1))}
+                          disabled={customQty <= 1}
+                          aria-label="সংখ্যা কমান"
+                          className="grid size-11 place-items-center rounded-full border-2 border-border text-xl font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
+                        >
+                          −
+                        </button>
+                        <span className="min-w-20 text-center text-lg font-bold text-ink">
+                          {toBn(customQty)}টি{" "}
+                          <span className="text-sm font-normal text-muted-foreground">
+                            (৳{toBn(selectedPkg.price)}/পিস)
+                          </span>
                         </span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setMult((m) => Math.min(10, m + 1))}
-                        disabled={mult >= 10}
-                        aria-label="পরিমাণ বাড়ান"
-                        className="grid size-11 place-items-center rounded-full border-2 border-border text-xl font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
-                      >
-                        +
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setCustomQty((n) => Math.min(30, n + 1))}
+                          disabled={customQty >= 30}
+                          aria-label="সংখ্যা বাড়ান"
+                          className="grid size-11 place-items-center rounded-full border-2 border-border text-xl font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        যত পিস চান তত নিন — দাম প্রতি-পিস রেটে হিসাব হবে।
+                      </p>
                     </div>
-                    <p className="mt-1.5 text-xs text-muted-foreground">
-                      একই প্যাকেজ একাধিক সেট নিলে দাম প্যাকেজ দামের গুণিতক হবে।
-                    </p>
-                  </div>
+                  ) : (
+                    <div className="mt-5">
+                      <Label className="text-base font-bold text-ink">পরিমাণ</Label>
+                      <div className="mt-2.5 flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setMult((m) => Math.max(1, m - 1))}
+                          disabled={mult <= 1}
+                          aria-label="পরিমাণ কমান"
+                          className="grid size-11 place-items-center rounded-full border-2 border-border text-xl font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
+                        >
+                          −
+                        </button>
+                        <span className="min-w-20 text-center text-lg font-bold text-ink">
+                          {toBn(mult)}×{" "}
+                          <span className="text-sm font-normal text-muted-foreground">
+                            ({toBn(totalItems)}টি)
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setMult((m) => Math.min(10, m + 1))}
+                          disabled={mult >= 10}
+                          aria-label="পরিমাণ বাড়ান"
+                          className="grid size-11 place-items-center rounded-full border-2 border-border text-xl font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        একই প্যাকেজ একাধিক সেট নিলে দাম প্যাকেজ দামের গুণিতক হবে।
+                      </p>
+                    </div>
+                  )}
 
                   {/* Color selection — one picker per item */}
                   <div>
@@ -442,10 +482,10 @@ export function OrderForm({
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">
                         {selectedPkg.name}
-                        {mult > 1 ? ` ×${toBn(mult)}` : ""} ({firstColor.label}
+                        {!isCustom && mult > 1 ? ` ×${toBn(mult)}` : ""} ({firstColor.label}
                         {totalItems > 1 ? ` +${toBn(totalItems - 1)}` : ""})
                       </span>
-                      <span className="font-semibold text-ink">৳{toBn(selectedPkg.price * mult)}</span>
+                      <span className="font-semibold text-ink">৳{toBn(pkgTotal)}</span>
                     </div>
                     <div className="mt-1 flex justify-between text-sm">
                       <span className="text-muted-foreground">ডেলিভারি চার্জ</span>

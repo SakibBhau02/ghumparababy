@@ -92,6 +92,11 @@ export function Footer() {
               </a>{" "}
               • ফেসবুক: @ghumparababy
             </p>
+            <p className="mt-2">
+              <a href="/track" className="font-semibold text-white/70 hover:text-honey">
+                🔍 অর্ডার ট্র্যাক করুন
+              </a>
+            </p>
           </div>
         </div>
         <div className="mt-8 border-t border-white/10 pt-6 text-center text-xs leading-relaxed text-white/40">

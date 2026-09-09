@@ -29,6 +29,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { OrderEditModal } from "@/components/admin/order-edit-modal";
 import {
   Activity,
   BadgeCheck,
@@ -38,9 +39,13 @@ import {
   MessageCircle,
   Package,
   LogOut,
+  Pencil,
   Phone,
   Pin,
+  Printer,
   RefreshCw,
+  Trash2,
+  Users,
   Tag,
   TrendingUp,
   Truck,
@@ -70,6 +75,19 @@ type OrderLike = {
   pinned: boolean;
   waSent: boolean;
   createdAt: string | Date;
+};
+
+type CustomerLike = {
+  phone: string;
+  name: string;
+  address: string;
+  division: string;
+  district: string;
+  upazila: string;
+  orderCount: number;
+  totalSpent: number;
+  firstOrderAt: string | Date;
+  lastOrderAt: string | Date;
 };
 
 const STATUS_META: Record<
@@ -143,16 +161,19 @@ export function AdminDashboard({
   productConfig: initialProducts,
   locationEnabled: initialLocationEnabled,
   whatsapp: initialWhatsapp,
+  customers: initialCustomers,
 }: {
   initialOrders: OrderLike[];
   deliveryConfig: DeliveryConfig;
   productConfig: ProductConfig;
   locationEnabled: boolean;
   whatsapp: WhatsappConfig;
+  customers: CustomerLike[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [orders, setOrders] = useState<OrderLike[]>(initialOrders);
+  const [customers] = useState<CustomerLike[]>(initialCustomers);
   const [config, setConfig] = useState<DeliveryConfig>(initialConfig);
   const [chargeInputs, setChargeInputs] = useState<Record<string, string>>(() =>
     Object.fromEntries(initialConfig.zones.map((z) => [z.id, String(z.charge)]))
@@ -176,6 +197,12 @@ export function AdminDashboard({
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<string>("all");
+  const [editingOrder, setEditingOrder] = useState<OrderLike | null>(null);
+  const [deleteArm, setDeleteArm] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [custQuery, setCustQuery] = useState("");
+  const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
 
   const stats = useMemo(() => {
     const active = orders.filter((o) => o.status !== "cancelled");
@@ -254,6 +281,43 @@ export function AdminDashboard({
         description: "আবার চেষ্টা করুন।",
         variant: "destructive",
       });
+    }
+  };
+
+  const filteredCustomers = useMemo(() => {
+    const q = custQuery.trim();
+    if (!q) return customers;
+    return customers.filter((c) => c.name.includes(q) || c.phone.includes(q));
+  }, [customers, custQuery]);
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  };
+
+  const printSelected = (per: 2 | 4) => {
+    if (selectedIds.length === 0) return;
+    window.open(`/admin/print?ids=${selectedIds.join(",")}&per=${per}`, "_blank");
+  };
+
+  const handleDelete = async (id: string) => {
+    if (deleteArm !== id) {
+      setDeleteArm(id);
+      setTimeout(() => {
+        setDeleteArm((cur) => (cur === id ? null : cur));
+      }, 5000);
+      return;
+    }
+    setDeleteArm(null);
+    const prev = orders;
+    setOrders((cur) => cur.filter((o) => o.id !== id));
+    setSelectedIds((cur) => cur.filter((x) => x !== id));
+    try {
+      const res = await fetch(`/api/admin/orders?id=${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      toast({ title: "অর্ডার ডিলিট হয়েছে" });
+    } catch {
+      setOrders(prev);
+      toast({ title: "ডিলিট ব্যর্থ", variant: "destructive" });
     }
   };
 
@@ -455,12 +519,18 @@ export function AdminDashboard({
 
       <div className="mx-auto max-w-6xl px-4">
         <Tabs defaultValue="orders">
-          <TabsList className="mt-6 grid w-full max-w-md grid-cols-2 rounded-full bg-white p-1 shadow-sm">
+          <TabsList className="mt-6 grid w-full max-w-lg grid-cols-3 rounded-full bg-white p-1 shadow-sm">
             <TabsTrigger
               value="orders"
               className="rounded-full font-bold data-[state=active]:bg-brand data-[state=active]:text-white"
             >
               📦 অর্ডার ({toBn(orders.length)})
+            </TabsTrigger>
+            <TabsTrigger
+              value="customers"
+              className="rounded-full font-bold data-[state=active]:bg-brand data-[state=active]:text-white"
+            >
+              👥 কাস্টমার ({toBn(customers.length)})
             </TabsTrigger>
             <TabsTrigger
               value="settings"
@@ -806,6 +876,84 @@ export function AdminDashboard({
           </Button>
         </div>
         </TabsContent>
+        <TabsContent value="customers">
+          <div className="mt-6 rounded-2xl border border-border bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="flex items-center gap-2 font-bold text-ink">
+                <Users className="size-5 text-brand" /> কাস্টমার ({toBn(customers.length)})
+              </h2>
+              <input
+                value={custQuery}
+                onChange={(e) => setCustQuery(e.target.value)}
+                placeholder="নাম বা মোবাইল দিয়ে খুঁজুন…"
+                className="h-10 rounded-full border border-border bg-cream/50 px-4 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              />
+            </div>
+            <div className="mt-3 space-y-2">
+              {filteredCustomers.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                  কোনো কাস্টমার পাওয়া যায়নি।
+                </div>
+              ) : (
+                filteredCustomers.map((c) => {
+                  const cOrders = orders.filter((o) => o.phone === c.phone);
+                  const loc = [c.division, c.district, c.upazila].filter(Boolean).join(", ");
+                  return (
+                    <div key={c.phone} className="overflow-hidden rounded-xl border border-border">
+                      <button
+                        onClick={() => setExpandedPhone((cur) => (cur === c.phone ? null : c.phone))}
+                        className="flex w-full flex-wrap items-center justify-between gap-2 p-3.5 text-left transition-colors hover:bg-cream/50"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-bold text-ink">{c.name || "(নাম নেই)"}</div>
+                          <div className="text-sm text-muted-foreground">{c.phone}</div>
+                        </div>
+                        <div className="text-right text-sm">
+                          <span className="font-bold text-brand">{toBn(c.orderCount)}টি অর্ডার</span>
+                          <span className="block text-xs text-muted-foreground">
+                            মোট ৳{toBn(c.totalSpent)}
+                          </span>
+                        </div>
+                      </button>
+                      {expandedPhone === c.phone && (
+                        <div className="border-t border-border bg-cream/40 p-3.5 text-sm">
+                          <p className="text-muted-foreground">{c.address}</p>
+                          {loc && <p className="mt-0.5 font-medium text-ink">📍 {loc}</p>}
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            প্রথম অর্ডার: {formatDate(c.firstOrderAt)} • শেষ: {formatDate(c.lastOrderAt)}
+                          </p>
+                          <div className="mt-2 space-y-1.5">
+                            {cOrders.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">কোনো অর্ডার নেই।</p>
+                            ) : (
+                              cOrders.map((o) => (
+                                <div
+                                  key={o.id}
+                                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs"
+                                >
+                                  <span className="font-mono font-bold text-ink">{o.orderCode}</span>
+                                  <span className="text-muted-foreground">
+                                    {o.packageName} • {toBn(o.quantity)}টি
+                                  </span>
+                                  <span className="font-bold text-brand">৳{toBn(o.totalPrice)}</span>
+                                  <span
+                                    className={`rounded-full border px-2 py-0.5 font-bold ${STATUS_META[o.status]?.badge ?? STATUS_META.pending.badge}`}
+                                  >
+                                    {STATUS_META[o.status]?.label ?? o.status}
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </TabsContent>
         <TabsContent value="orders">
         {/* Filter */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
@@ -828,7 +976,44 @@ export function AdminDashboard({
               {f.label}
             </button>
           ))}
+          <button
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelectedIds([]);
+            }}
+            className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors ${
+              selectMode
+                ? "border-ink bg-ink text-white"
+                : "border-border bg-white text-muted-foreground hover:border-brand/40"
+            }`}
+          >
+            <Printer className="mr-1 inline size-3.5" />
+            {selectMode ? "সিলেক্ট বন্ধ" : "🖨️ সিলেক্ট"}
+          </button>
         </div>
+        {selectMode && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-ink p-3 text-sm text-white">
+            <span className="font-bold">{toBn(selectedIds.length)}টি সিলেক্টেড</span>
+            <div className="ms-auto flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                disabled={selectedIds.length === 0}
+                onClick={() => printSelected(2)}
+                className="rounded-full bg-white font-bold text-ink hover:bg-cream disabled:opacity-50"
+              >
+                পেজে ২টা প্রিন্ট
+              </Button>
+              <Button
+                size="sm"
+                disabled={selectedIds.length === 0}
+                onClick={() => printSelected(4)}
+                className="rounded-full bg-white font-bold text-ink hover:bg-cream disabled:opacity-50"
+              >
+                পেজে ৪টা প্রিন্ট
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Orders list */}
         <div className="mt-4 space-y-3">
@@ -847,6 +1032,15 @@ export function AdminDashboard({
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
+                        {selectMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(o.id)}
+                            onChange={() => toggleSelectOne(o.id)}
+                            aria-label="প্রিন্টের জন্য সিলেক্ট"
+                            className="size-5 accent-[#1c1917]"
+                          />
+                        )}
                         <span className="rounded-lg bg-cream px-2 py-0.5 font-mono text-xs font-bold text-ink">
                           {o.orderCode}
                         </span>
@@ -935,6 +1129,38 @@ export function AdminDashboard({
                           ))}
                         </SelectContent>
                       </Select>
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => setEditingOrder(o)}
+                          title="অর্ডার এডিট"
+                          className="grid size-9 place-items-center rounded-full border border-border bg-white text-muted-foreground transition-colors hover:border-brand hover:text-brand"
+                        >
+                          <Pencil className="size-4" />
+                        </button>
+                        <button
+                          onClick={() => window.open(`/admin/print?ids=${o.id}&per=2`, "_blank")}
+                          title="ইনভয়েস প্রিন্ট"
+                          className="grid size-9 place-items-center rounded-full border border-border bg-white text-muted-foreground transition-colors hover:border-brand hover:text-brand"
+                        >
+                          <Printer className="size-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(o.id)}
+                          title={deleteArm === o.id ? "নিশ্চিত করতে আবার চাপুন" : "অর্ডার ডিলিট"}
+                          className={`grid size-9 place-items-center rounded-full border transition-colors ${
+                            deleteArm === o.id
+                              ? "border-destructive bg-destructive text-white"
+                              : "border-border bg-white text-muted-foreground hover:border-destructive/50 hover:text-destructive"
+                          }`}
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                      {deleteArm === o.id && (
+                        <p className="text-xs font-bold text-destructive">
+                          ডিলিট করতে আবার চাপুন
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -944,6 +1170,20 @@ export function AdminDashboard({
         </div>
         </TabsContent>
         </Tabs>
+        {editingOrder && (
+          <OrderEditModal
+            order={editingOrder}
+            products={products}
+            zones={config.zones}
+            locationEnabled={locOn}
+            onClose={() => setEditingOrder(null)}
+            onSaved={(updated) => {
+              setOrders((cur) => cur.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)));
+              setEditingOrder(null);
+              toast({ title: "অর্ডার আপডেট হয়েছে" });
+            }}
+          />
+        )}
       </div>
     </main>
   );

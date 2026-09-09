@@ -24,13 +24,15 @@ export default async function AdminPage() {
   }
 
   try {
-    const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp] = await Promise.all([
-      db.order.findMany({ orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] }),
-      getDeliveryConfig(),
-      getProductConfig(),
-      getLocationEnabled(),
-      getWhatsappConfig(),
-    ]);
+    const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp, customers] =
+      await Promise.all([
+        db.order.findMany({ orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] }),
+        getDeliveryConfig(),
+        getProductConfig(),
+        getLocationEnabled(),
+        getWhatsappConfig(),
+        db.customer.findMany({ orderBy: { lastOrderAt: "desc" } }),
+      ]);
 
     return (
       <AdminDashboard
@@ -39,6 +41,7 @@ export default async function AdminPage() {
         productConfig={productConfig}
         locationEnabled={locationEnabled}
         whatsapp={whatsapp}
+        customers={customers}
       />
     );
   } catch {

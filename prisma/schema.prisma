@@ -38,3 +38,16 @@ model Setting {
   key   String @id
   value String
 }
+
+model Customer {
+  phone        String   @id
+  name         String   @default("")
+  address      String   @default("")
+  division     String   @default("")
+  district     String   @default("")
+  upazila      String   @default("")
+  orderCount   Int      @default(0)
+  totalSpent   Int      @default(0)
+  firstOrderAt DateTime @default(now())
+  lastOrderAt  DateTime @default(now())
+}

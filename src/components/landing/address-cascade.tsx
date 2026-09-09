@@ -22,9 +22,11 @@ function Placeholder({ children }: { children: React.ReactNode }) {
 export function AddressCascade({
   value,
   onChange,
+  title,
 }: {
   value: LocationSelection;
   onChange: (v: LocationSelection) => void;
+  title?: string;
 }) {
   const [divisions, setDivisions] = useState<BdDivision[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -52,7 +54,7 @@ export function AddressCascade({
 
   return (
     <div>
-      <Label className="text-base font-bold text-ink">৪. আপনার এলাকা নির্বাচন করুন</Label>
+      <Label className="text-base font-bold text-ink">{title ?? "৪. আপনার এলাকা নির্বাচন করুন"}</Label>
       {failed ? (
         <p className="mt-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
           এলাকার তালিকা লোড হয়নি। ইন্টারনেট চেক করে পেজ রিফ্রেশ করুন।

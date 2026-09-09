@@ -8,7 +8,7 @@
  */
 
 export type ProductPackageConfig = {
-  id: "single" | "combo2" | "combo3";
+  id: "single" | "combo2" | "combo3" | "custom";
   price: number;
   oldPrice: number;
 };
@@ -43,9 +43,16 @@ export const PACKAGE_META: Record<
     qtyLabel: "৩টি সোয়াডেল",
     unitSuffix: " — সেরা ভ্যালু",
   },
+  custom: {
+    quantity: 1,
+    formName: "কাস্টম",
+    priceName: "কাস্টম প্যাক",
+    qtyLabel: "পছন্দমতো সংখ্যা",
+    unitSuffix: "",
+  },
 };
 
-export const PACKAGE_IDS = ["single", "combo2", "combo3"] as const;
+export const PACKAGE_IDS = ["single", "combo2", "combo3", "custom"] as const;
 
 /** Current live prices — used as defaults until admin saves a change. */
 export const DEFAULT_PRODUCT_CONFIG: ProductConfig = {
@@ -53,6 +60,7 @@ export const DEFAULT_PRODUCT_CONFIG: ProductConfig = {
     { id: "single", price: 549, oldPrice: 899 },
     { id: "combo2", price: 999, oldPrice: 1798 },
     { id: "combo3", price: 1399, oldPrice: 2697 },
+    { id: "custom", price: 549, oldPrice: 899 },
   ],
 };
 

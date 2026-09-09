@@ -27,13 +27,17 @@ export function Pricing({
           ? "সবচেয়ে জনপ্রিয়"
           : p.id === "combo3"
             ? "সেরা ভ্যালু"
-            : null,
+            : p.id === "custom"
+              ? "পছন্দমতো"
+              : null,
       perks:
         p.id === "single"
           ? [deliveryPerk, "ক্যাশ অন ডেলিভারি"]
           : p.id === "combo2"
             ? ["২ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি"]
-            : ["৩ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি", "গিফট র‍্যাপ ফ্রি"],
+            : p.id === "combo3"
+              ? ["৩ কালার পছন্দের সুযোগ", deliveryPerk, "ক্যাশ অন ডেলিভারি", "গিফট র‍্যাপ ফ্রি"]
+              : ["পছন্দমতো সংখ্যা ও কালার", deliveryPerk, "ক্যাশ অন ডেলিভারি"],
     };
   });
 
@@ -52,7 +56,7 @@ export function Pricing({
           </div>
         </div>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-3">
+        <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
           {PACKAGE_LIST.map((pkg) => (
             <div
               key={pkg.id}

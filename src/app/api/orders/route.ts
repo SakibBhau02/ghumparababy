@@ -7,13 +7,14 @@ import { isValidLocationChain } from "@/lib/bd-geo";
 import { getProductConfig } from "@/lib/product";
 import { getLocationEnabled } from "@/lib/site-settings";
 import { PACKAGE_META, getPackage, perPiecePrice } from "@/lib/product-shared";
+import { toBn } from "@/lib/landing-data";
 
 const COLORS = ["blue", "pink", "red", "beige", "cream", "grey"];
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, phone, address, division, district, upazila, colors, multiplier, color, pkg, note, zone } = body as {
+    const { name, phone, address, division, district, upazila, colors, multiplier, customQty, color, pkg, note, zone } = body as {
       name?: string;
       phone?: string;
       address?: string;
@@ -22,6 +23,7 @@ export async function POST(req: NextRequest) {
       upazila?: string;
       colors?: unknown;
       multiplier?: unknown;
+      customQty?: unknown;
       color?: string;
       pkg?: string;
       note?: string;
@@ -87,9 +89,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Multiplier: same package ×N (1..10)
-    const mult = Math.min(Math.max(Math.round(Number(multiplier)) || 1, 1), 10);
-    const totalItems = selected.quantity * mult;
+    // Multiplier: same package ×N (1..10). Custom packs use an exact piece count.
+    const isCustom = selected.id === "custom";
+    const mult = isCustom
+      ? 1
+      : Math.min(Math.max(Math.round(Number(multiplier)) || 1, 1), 10);
+    const customCount = isCustom
+      ? Math.min(Math.max(Math.round(Number(customQty)) || 4, 1), 30)
+      : 0;
+    const totalItems = isCustom ? customCount : selected.quantity * mult;
 
     // One color per item (single color string accepted for backward compat)
     const pickedColors = Array.isArray(colors)
@@ -106,7 +114,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const productPrice = selected.price * mult;
+    const productPrice = isCustom ? selected.price * customCount : selected.price * mult;
 
     // --- Delivery charge (server-side source of truth: admin settings) ---
     const deliveryConfig = await getDeliveryConfig();
@@ -147,8 +155,9 @@ export async function POST(req: NextRequest) {
         upazila: location.upazila,
         color: pickedColors[0],
         colors: JSON.stringify(pickedColors),
-        packageName:
-          mult > 1
+        packageName: isCustom
+          ? `কাস্টম (${toBn(customCount)}টি)`
+          : mult > 1
             ? `${PACKAGE_META[selected.id].formName} ×${mult}`
             : PACKAGE_META[selected.id].formName,
         quantity: totalItems,
@@ -159,6 +168,35 @@ export async function POST(req: NextRequest) {
         status: "pending",
       },
     });
+
+    // Link/update the customer profile (best-effort — never blocks the order)
+    try {
+      await db.customer.upsert({
+        where: { phone: cleanPhone },
+        update: {
+          name: name.trim(),
+          address: address.trim(),
+          division: location.division,
+          district: location.district,
+          upazila: location.upazila,
+          orderCount: { increment: 1 },
+          totalSpent: { increment: order.totalPrice },
+          lastOrderAt: new Date(),
+        },
+        create: {
+          phone: cleanPhone,
+          name: name.trim(),
+          address: address.trim(),
+          division: location.division,
+          district: location.district,
+          upazila: location.upazila,
+          orderCount: 1,
+          totalSpent: order.totalPrice,
+        },
+      });
+    } catch (e) {
+      console.error("customer upsert failed:", e);
+    }
 
     // Durable backup (append-only ledger + CSV copies) — never blocks the order
     await appendOrderBackup(order);
