@@ -25,7 +25,7 @@ export default async function AdminPage() {
 
   try {
     const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp] = await Promise.all([
-      db.order.findMany({ orderBy: { createdAt: "desc" } }),
+      db.order.findMany({ orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] }),
       getDeliveryConfig(),
       getProductConfig(),
       getLocationEnabled(),

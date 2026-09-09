@@ -24,6 +24,12 @@ import {
 } from "@/lib/whatsapp-shared";
 import { Switch } from "@/components/ui/switch";
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
   Activity,
   BadgeCheck,
   Clock,
@@ -33,6 +39,7 @@ import {
   Package,
   LogOut,
   Phone,
+  Pin,
   RefreshCw,
   Tag,
   TrendingUp,
@@ -60,6 +67,7 @@ type OrderLike = {
   deliveryCharge: number;
   totalPrice: number;
   status: string;
+  pinned: boolean;
   waSent: boolean;
   createdAt: string | Date;
 };
@@ -183,8 +191,17 @@ export function AdminDashboard({
     };
   }, [orders]);
 
+  // Pinned orders always stay on top (server also returns them first)
+  const sortedOrders = useMemo(
+    () =>
+      [...orders].sort(
+        (a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false)
+      ),
+    [orders]
+  );
+
   const visibleOrders =
-    filter === "all" ? orders : orders.filter((o) => o.status === filter);
+    filter === "all" ? sortedOrders : sortedOrders.filter((o) => o.status === filter);
 
   const updateStatus = async (id: string, status: string) => {
     const prev = orders;
@@ -214,6 +231,29 @@ export function AdminDashboard({
       });
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  const togglePin = async (id: string, pinned: boolean) => {
+    const prev = orders;
+    setOrders((cur) => cur.map((o) => (o.id === id ? { ...o, pinned } : o)));
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, pinned }),
+      });
+      if (!res.ok) throw new Error();
+      toast({
+        title: pinned ? "📌 অর্ডার সবার উপরে পিন করা হয়েছে" : "পিন সরানো হয়েছে",
+      });
+    } catch {
+      setOrders(prev);
+      toast({
+        title: "আপডেট ব্যর্থ",
+        description: "আবার চেষ্টা করুন।",
+        variant: "destructive",
+      });
     }
   };
 
@@ -386,14 +426,6 @@ export function AdminDashboard({
             <p className="text-xs text-muted-foreground">অর্ডার ম্যানেজমেন্ট ড্যাশবোর্ড</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push("/admin/pixel")}
-              className="rounded-full"
-            >
-              <Activity className="mr-1.5 size-4" /> Pixel সেটআপ
-            </Button>
             <a href="/api/admin/orders/export" download>
               <Button variant="outline" size="sm" className="rounded-full">
                 <Download className="mr-1.5 size-4" /> CSV
@@ -422,6 +454,22 @@ export function AdminDashboard({
       </header>
 
       <div className="mx-auto max-w-6xl px-4">
+        <Tabs defaultValue="orders">
+          <TabsList className="mt-6 grid w-full max-w-md grid-cols-2 rounded-full bg-white p-1 shadow-sm">
+            <TabsTrigger
+              value="orders"
+              className="rounded-full font-bold data-[state=active]:bg-brand data-[state=active]:text-white"
+            >
+              📦 অর্ডার ({toBn(orders.length)})
+            </TabsTrigger>
+            <TabsTrigger
+              value="settings"
+              className="rounded-full font-bold data-[state=active]:bg-brand data-[state=active]:text-white"
+            >
+              ⚙️ সেটিংস
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="orders">
         {/* Stats */}
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard
@@ -462,6 +510,8 @@ export function AdminDashboard({
           />
         </div>
 
+        </TabsContent>
+        <TabsContent value="settings">
         {/* Delivery charge settings */}
         <div className="mt-6 rounded-2xl border border-honey/40 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -736,6 +786,27 @@ export function AdminDashboard({
           </div>
         </div>
 
+        {/* Pixel setup link */}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2">
+            <Activity className="size-5 text-brand" />
+            <div>
+              <h2 className="font-bold text-ink">Meta Pixel সেটআপ</h2>
+              <p className="text-xs text-muted-foreground">
+                Pixel ID ও ইভেন্ট চালু/বন্ধ করুন — অর্ডার ট্র্যাকিং এর জন্য।
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => router.push("/admin/pixel")}
+            className="rounded-full font-bold"
+          >
+            <Activity className="mr-1.5 size-4" /> খুলুন
+          </Button>
+        </div>
+        </TabsContent>
+        <TabsContent value="orders">
         {/* Filter */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
           {[
@@ -790,6 +861,18 @@ export function AdminDashboard({
                             📲 WhatsApp ✓
                           </span>
                         )}
+                        <button
+                          onClick={() => togglePin(o.id, !o.pinned)}
+                          title={o.pinned ? "পিন সরান" : "সবার উপরে পিন করুন"}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-bold transition-colors ${
+                            o.pinned
+                              ? "border-brand bg-brand text-white"
+                              : "border-border bg-white text-muted-foreground hover:border-brand/50 hover:text-brand"
+                          }`}
+                        >
+                          <Pin className={`size-3 ${o.pinned ? "fill-white" : ""}`} />
+                          {o.pinned ? "পিনড" : "পিন"}
+                        </button>
                       </div>
                       <div className="mt-2 font-bold text-ink">{o.name}</div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
@@ -859,6 +942,8 @@ export function AdminDashboard({
             })
           )}
         </div>
+        </TabsContent>
+        </Tabs>
       </div>
     </main>
   );

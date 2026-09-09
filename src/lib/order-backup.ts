@@ -34,6 +34,7 @@ export type BackupOrder = {
   deliveryCharge: number;
   totalPrice: number;
   status: string;
+  pinned: boolean;
   waSent: boolean;
   createdAt: string | Date;
 };
@@ -60,6 +61,7 @@ export const CSV_HEADERS = [
   "deliveryCharge",
   "totalPrice",
   "status",
+  "pinned",
   "createdAt",
   "id",
 ] as const;
@@ -106,6 +108,7 @@ export function ordersToCsv(orders: BackupOrder[]): string {
         o.deliveryCharge,
         o.totalPrice,
         o.status,
+        o.pinned ? "yes" : "",
         o.createdAt instanceof Date ? o.createdAt.toISOString() : o.createdAt,
         o.id,
       ]
@@ -137,12 +140,14 @@ async function readBackupRows(): Promise<BackupOrder[]> {
 
 /**
  * All orders = DB rows + ledger rows missing from the DB (deleted/reset).
- * Sorted newest first. Never throws.
+ * Pinned first, then newest first. Never throws.
  */
 export async function mergedOrders(): Promise<BackupOrder[]> {
   let dbRows: BackupOrder[] = [];
   try {
-    dbRows = (await db.order.findMany({ orderBy: { createdAt: "desc" } })) as BackupOrder[];
+    dbRows = (await db.order.findMany({
+      orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
+    })) as BackupOrder[];
   } catch (e) {
     console.error("order-backup: DB read failed", e);
   }
@@ -150,6 +155,8 @@ export async function mergedOrders(): Promise<BackupOrder[]> {
   const seen = new Set(dbRows.map((r) => r.id));
   const extras = ledger.filter((r) => !r.id || !seen.has(r.id));
   return [...dbRows, ...extras].sort((a, b) => {
+    const pin = Number(b.pinned ?? false) - Number(a.pinned ?? false);
+    if (pin !== 0) return pin;
     const ta = new Date(a.createdAt).getTime() || 0;
     const tb = new Date(b.createdAt).getTime() || 0;
     return tb - ta;

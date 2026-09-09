@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   }
 
   const orders = await db.order.findMany({
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
   });
 
   const stats = {
@@ -41,12 +41,29 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    const { id, status } = (await req.json()) as {
+    const { id, status, pinned } = (await req.json()) as {
       id?: string;
       status?: string;
+      pinned?: unknown;
     };
 
-    if (!id || !status || !STATUSES.includes(status)) {
+    if (!id) {
+      return NextResponse.json(
+        { error: "অবৈধ রিকোয়েস্ট।" },
+        { status: 400 }
+      );
+    }
+
+    // Pin/unpin an order (stays on top of the admin list)
+    if (typeof pinned === "boolean" && status === undefined) {
+      const order = await db.order.update({
+        where: { id },
+        data: { pinned },
+      });
+      return NextResponse.json({ ok: true, order });
+    }
+
+    if (!status || !STATUSES.includes(status)) {
       return NextResponse.json(
         { error: "অবৈধ রিকোয়েস্ট।" },
         { status: 400 }
