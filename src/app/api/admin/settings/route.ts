@@ -10,6 +10,11 @@ import {
   type ProductConfig,
 } from "@/lib/product-shared";
 import { getLocationEnabled, setLocationEnabled } from "@/lib/site-settings";
+import { getWhatsappConfig, saveWhatsappConfig } from "@/lib/whatsapp";
+import {
+  sanitizeWhatsappConfig,
+  type WhatsappConfig,
+} from "@/lib/whatsapp-shared";
 import { isAdminRequest } from "@/lib/admin-auth";
 
 const MAX_CHARGE = 999;
@@ -19,12 +24,13 @@ export async function GET(req: NextRequest) {
   if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "অনুমতি নেই।" }, { status: 401 });
   }
-  const [config, products, locationEnabled] = await Promise.all([
+  const [config, products, locationEnabled, whatsapp] = await Promise.all([
     getDeliveryConfig(),
     getProductConfig(),
     getLocationEnabled(),
+    getWhatsappConfig(),
   ]);
-  return NextResponse.json({ config, products, locationEnabled });
+  return NextResponse.json({ config, products, locationEnabled, whatsapp });
 }
 
 /**
@@ -43,11 +49,13 @@ export async function PUT(req: NextRequest) {
       charges?: Record<string, number>;
       products?: unknown;
       locationEnabled?: unknown;
+      whatsapp?: unknown;
     };
     const result: {
       config?: DeliveryConfig;
       products?: ProductConfig;
       locationEnabled?: boolean;
+      whatsapp?: WhatsappConfig;
     } = {};
 
     if (body.charges !== undefined) {
@@ -89,6 +97,18 @@ export async function PUT(req: NextRequest) {
       }
       await setLocationEnabled(body.locationEnabled);
       result.locationEnabled = body.locationEnabled;
+    }
+
+    if (body.whatsapp !== undefined) {
+      const sane = sanitizeWhatsappConfig(body.whatsapp);
+      if (!sane) {
+        return NextResponse.json(
+          { error: "WhatsApp সেটিংস সঠিক নয়।" },
+          { status: 400 }
+        );
+      }
+      await saveWhatsappConfig(sane);
+      result.whatsapp = sane;
     }
 
     if (Object.keys(result).length === 0) {

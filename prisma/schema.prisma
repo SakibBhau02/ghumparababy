@@ -21,6 +21,7 @@ model Order {
   district      String   @default("")
   upazila       String   @default("")
   color         String
+  colors        String   @default("[]")
   packageName   String
   quantity      Int
   unitPrice     Int
@@ -28,6 +29,7 @@ model Order {
   deliveryCharge Int     @default(0)
   totalPrice    Int
   status        String   @default("pending")
+  waSent        Boolean  @default(false)
   createdAt     DateTime @default(now())
 }
 

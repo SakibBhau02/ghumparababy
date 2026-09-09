@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isAdminRequest } from "@/lib/admin-auth";
+import { getWhatsappConfig, sendOrderConfirmation } from "@/lib/whatsapp";
+import { isWhatsappReady } from "@/lib/whatsapp-shared";
 
 const STATUSES = ["pending", "confirmed", "shipped", "delivered", "cancelled"];
 
@@ -56,7 +58,33 @@ export async function PATCH(req: NextRequest) {
       data: { status },
     });
 
-    return NextResponse.json({ ok: true, order });
+    // Automatic WhatsApp confirmation message (never blocks the status update)
+    let waSent = order.waSent;
+    if (status === "confirmed" && !order.waSent) {
+      try {
+        const waConfig = await getWhatsappConfig();
+        if (isWhatsappReady(waConfig)) {
+          const result = await sendOrderConfirmation(waConfig, {
+            name: order.name,
+            phone: order.phone,
+            orderCode: order.orderCode,
+            packageName: order.packageName,
+            quantity: order.quantity,
+            totalPrice: order.totalPrice,
+          });
+          if (result.ok) {
+            waSent = true;
+            await db.order.update({ where: { id }, data: { waSent: true } });
+          } else {
+            console.error("whatsapp send failed:", order.orderCode, result.error);
+          }
+        }
+      } catch (e) {
+        console.error("whatsapp send crashed:", e);
+      }
+    }
+
+    return NextResponse.json({ ok: true, order: { ...order, waSent } });
   } catch {
     return NextResponse.json(
       { error: "আপডেট করা যায়নি। আবার চেষ্টা করুন।" },

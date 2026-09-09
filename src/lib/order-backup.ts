@@ -14,6 +14,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { db } from "@/lib/db";
+import { PRODUCT_COLORS } from "@/lib/landing-data";
 
 export type BackupOrder = {
   id: string;
@@ -25,6 +26,7 @@ export type BackupOrder = {
   district: string;
   upazila: string;
   color: string;
+  colors: string;
   packageName: string;
   quantity: number;
   unitPrice: number;
@@ -32,6 +34,7 @@ export type BackupOrder = {
   deliveryCharge: number;
   totalPrice: number;
   status: string;
+  waSent: boolean;
   createdAt: string | Date;
 };
 
@@ -49,6 +52,7 @@ export const CSV_HEADERS = [
   "district",
   "upazila",
   "color",
+  "colors",
   "packageName",
   "quantity",
   "unitPrice",
@@ -67,6 +71,20 @@ function csvEscape(value: unknown): string {
   return `"${safe.replace(/"/g, '""')}"`;
 }
 
+/** JSON color-id array → joined Bangla labels (for CSV export). */
+export function colorLabels(raw: unknown): string {
+  try {
+    const arr = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
+    if (!Array.isArray(arr)) return "";
+    return arr
+      .filter((c): c is string => typeof c === "string")
+      .map((c) => PRODUCT_COLORS.find((p) => p.id === c)?.label ?? c)
+      .join(", ");
+  } catch {
+    return "";
+  }
+}
+
 export function ordersToCsv(orders: BackupOrder[]): string {
   const lines = [CSV_HEADERS.join(",")];
   for (const o of orders) {
@@ -80,6 +98,7 @@ export function ordersToCsv(orders: BackupOrder[]): string {
         o.district ?? "",
         o.upazila ?? "",
         o.color,
+        colorLabels(o.colors),
         o.packageName,
         o.quantity,
         o.unitPrice,

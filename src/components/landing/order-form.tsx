@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { PRODUCT_COLORS, toBn, HOTLINE, HOTLINE_LINK } from "@/lib/landing-data";
 import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
-import { PACKAGE_META, perPiecePrice, type ProductConfig } from "@/lib/product-shared";
+import { PACKAGE_META, getPackage, perPiecePrice, type ProductConfig } from "@/lib/product-shared";
 import type { LocationSelection } from "@/lib/bd-geo";
 import { AddressCascade } from "@/components/landing/address-cascade";
 import { pixelTrack } from "@/lib/pixel";
@@ -28,7 +28,8 @@ export function OrderForm({
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
-  const [color, setColor] = useState<string>("pink");
+  const [mult, setMult] = useState<number>(1);
+  const [colors, setColors] = useState<string[]>(["pink"]);
   const [pkg, setPkg] = useState<string>(
     productConfig.packages.some((p) => p.id === "combo2")
       ? "combo2"
@@ -60,11 +61,22 @@ export function OrderForm({
   });
 
   const selectedPkg = packageOptions.find((p) => p.id === pkg) ?? packageOptions[0];
-  const selectedColor = PRODUCT_COLORS.find((c) => c.id === color)!;
+  const selectedQty = getPackage(productConfig, selectedPkg.id)?.quantity ?? 1;
+  const totalItems = selectedQty * mult;
+  const firstColor = PRODUCT_COLORS.find((c) => c.id === colors[0]) ?? PRODUCT_COLORS[1];
+
+  // Keep exactly one color slot per item when package/multiplier changes
+  useEffect(() => {
+    setColors((cur) => {
+      if (cur.length === totalItems) return cur;
+      if (cur.length > totalItems) return cur.slice(0, totalItems);
+      return [...cur, ...Array<string>(totalItems - cur.length).fill("pink")];
+    });
+  }, [totalItems]);
 
   const zoneNeeded = !isAllFree(deliveryConfig);
   const currentCharge = zoneNeeded ? zoneCharge(deliveryConfig, zone) : 0;
-  const grandTotal = selectedPkg.price + currentCharge;
+  const grandTotal = selectedPkg.price * mult + currentCharge;
 
   // Meta Pixel: InitiateCheckout fires once, on the user's first interaction with the order form
   const initiated = useRef(false);
@@ -85,7 +97,7 @@ export function OrderForm({
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone, address, ...location, color, pkg, zone }),
+        body: JSON.stringify({ name, phone, address, ...location, colors, multiplier: mult, pkg, zone }),
       });
       const data = await res.json();
 
@@ -191,9 +203,9 @@ export function OrderForm({
               {/* Left: selected product preview */}
               <div className="relative hidden lg:col-span-2 lg:block">
                 <div className="relative h-full min-h-[560px]">
-                  <Image
-                    src={selectedColor.image}
-                    alt={`${selectedColor.label} কালারের সোয়াডেল`}
+                    <Image
+                      src={firstColor.image}
+                      alt={`${firstColor.label} কালারের সোয়াডেল`}
                     fill
                     className="object-cover"
                     sizes="40vw"
@@ -201,9 +213,9 @@ export function OrderForm({
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-6 pt-16">
                     <div className="text-white">
                       <div className="text-sm opacity-80">আপনার নির্বাচন</div>
-                      <div className="text-lg font-bold">
-                        {selectedColor.label} • {selectedPkg.name}
-                      </div>
+                        <div className="text-lg font-bold">
+                          {firstColor.label} • {selectedPkg.name}
+                        </div>
                       <div className="mt-1 text-2xl font-bold text-honey">
                         ৳{toBn(selectedPkg.price)}
                       </div>
@@ -223,10 +235,10 @@ export function OrderForm({
                         <button
                           key={p.id}
                           type="button"
-                          onClick={() => {
-                            setPkg(p.id);
-                            fireInitiate(p.price);
-                          }}
+                            onClick={() => {
+                              setPkg(p.id);
+                              fireInitiate(p.price * mult);
+                            }}
                           aria-pressed={pkg === p.id}
                           className={`rounded-2xl border-2 p-3.5 text-left transition-all ${
                             pkg === p.id
@@ -246,31 +258,79 @@ export function OrderForm({
                     </div>
                   </div>
 
-                  {/* Color selection */}
+                  {/* Quantity multiplier */}
+                  <div className="mt-5">
+                    <Label className="text-base font-bold text-ink">পরিমাণ</Label>
+                    <div className="mt-2.5 flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setMult((m) => Math.max(1, m - 1))}
+                        disabled={mult <= 1}
+                        aria-label="পরিমাণ কমান"
+                        className="grid size-11 place-items-center rounded-full border-2 border-border text-xl font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
+                      >
+                        −
+                      </button>
+                      <span className="min-w-20 text-center text-lg font-bold text-ink">
+                        {toBn(mult)}×{" "}
+                        <span className="text-sm font-normal text-muted-foreground">
+                          ({toBn(totalItems)}টি)
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setMult((m) => Math.min(10, m + 1))}
+                        disabled={mult >= 10}
+                        aria-label="পরিমাণ বাড়ান"
+                        className="grid size-11 place-items-center rounded-full border-2 border-border text-xl font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      একই প্যাকেজ একাধিক সেট নিলে দাম প্যাকেজ দামের গুণিতক হবে।
+                    </p>
+                  </div>
+
+                  {/* Color selection — one picker per item */}
                   <div>
-                    <Label className="text-base font-bold text-ink">২. কালার বেছে নিন</Label>
-                    <div className="mt-2.5 grid grid-cols-3 gap-2.5 sm:grid-cols-6">
-                      {PRODUCT_COLORS.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            setColor(c.id);
-                            fireInitiate();
-                          }}
-                          aria-pressed={color === c.id}
-                          aria-label={c.label}
-                          className={`group flex flex-col items-center gap-1 rounded-xl border-2 p-1.5 transition-all ${
-                            color === c.id ? "border-brand bg-brand-soft/50" : "border-transparent"
-                          }`}
-                        >
-                          <div className="relative aspect-square w-full overflow-hidden rounded-lg">
-                            <Image src={c.image} alt={c.label} fill className="object-cover" sizes="60px" />
+                    <Label className="text-base font-bold text-ink">
+                      ২. কালার বেছে নিন
+                      {totalItems > 1 ? ` (${toBn(totalItems)}টি পিসের জন্য ${toBn(totalItems)}টি কালার)` : ""}
+                    </Label>
+                    <div className="mt-2.5 space-y-4">
+                      {colors.map((col, i) => (
+                        <div key={i}>
+                          {totalItems > 1 && (
+                            <div className="mb-1.5 text-sm font-semibold text-ink">
+                              {toBn(i + 1)} নম্বর পিস
+                            </div>
+                          )}
+                          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-6">
+                            {PRODUCT_COLORS.map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => {
+                                  setColors((cur) => cur.map((v, j) => (j === i ? c.id : v)));
+                                  fireInitiate();
+                                }}
+                                aria-pressed={col === c.id}
+                                aria-label={c.label}
+                                className={`group flex flex-col items-center gap-1 rounded-xl border-2 p-1.5 transition-all ${
+                                  col === c.id ? "border-brand bg-brand-soft/50" : "border-transparent"
+                                }`}
+                              >
+                                <div className="relative aspect-square w-full overflow-hidden rounded-lg">
+                                  <Image src={c.image} alt={c.label} fill className="object-cover" sizes="60px" />
+                                </div>
+                                <span className={`text-xs font-medium ${col === c.id ? "text-brand" : "text-muted-foreground"}`}>
+                                  {c.label}
+                                </span>
+                              </button>
+                            ))}
                           </div>
-                          <span className={`text-xs font-medium ${color === c.id ? "text-brand" : "text-muted-foreground"}`}>
-                            {c.label}
-                          </span>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -381,9 +441,11 @@ export function OrderForm({
                   <div className="rounded-2xl bg-cream p-4">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">
-                        {selectedPkg.name} ({selectedColor.label})
+                        {selectedPkg.name}
+                        {mult > 1 ? ` ×${toBn(mult)}` : ""} ({firstColor.label}
+                        {totalItems > 1 ? ` +${toBn(totalItems - 1)}` : ""})
                       </span>
-                      <span className="font-semibold text-ink">৳{toBn(selectedPkg.price)}</span>
+                      <span className="font-semibold text-ink">৳{toBn(selectedPkg.price * mult)}</span>
                     </div>
                     <div className="mt-1 flex justify-between text-sm">
                       <span className="text-muted-foreground">ডেলিভারি চার্জ</span>

@@ -13,13 +13,15 @@ const COLORS = ["blue", "pink", "red", "beige", "cream", "grey"];
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, phone, address, division, district, upazila, color, pkg, note, zone } = body as {
+    const { name, phone, address, division, district, upazila, colors, multiplier, color, pkg, note, zone } = body as {
       name?: string;
       phone?: string;
       address?: string;
       division?: string;
       district?: string;
       upazila?: string;
+      colors?: unknown;
+      multiplier?: unknown;
       color?: string;
       pkg?: string;
       note?: string;
@@ -77,13 +79,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (!color || !COLORS.includes(color)) {
-      return NextResponse.json(
-        { error: "অনুগ্রহ করে একটি কালার নির্বাচন করুন।" },
-        { status: 400 }
-      );
-    }
-
     const selected = getPackage(productConfig, pkg ?? "");
     if (!pkg || !selected) {
       return NextResponse.json(
@@ -91,7 +86,27 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    const productPrice = selected.price;
+
+    // Multiplier: same package ×N (1..10)
+    const mult = Math.min(Math.max(Math.round(Number(multiplier)) || 1, 1), 10);
+    const totalItems = selected.quantity * mult;
+
+    // One color per item (single color string accepted for backward compat)
+    const pickedColors = Array.isArray(colors)
+      ? colors.filter(
+          (c): c is string => typeof c === "string" && COLORS.includes(c)
+        )
+      : typeof color === "string" && COLORS.includes(color)
+        ? [color]
+        : [];
+    if (pickedColors.length !== totalItems) {
+      return NextResponse.json(
+        { error: `অনুগ্রহ করে ${totalItems}টি পিসের জন্য ${totalItems}টি কালার বেছে নিন।` },
+        { status: 400 }
+      );
+    }
+
+    const productPrice = selected.price * mult;
 
     // --- Delivery charge (server-side source of truth: admin settings) ---
     const deliveryConfig = await getDeliveryConfig();
@@ -130,9 +145,13 @@ export async function POST(req: NextRequest) {
         division: location.division,
         district: location.district,
         upazila: location.upazila,
-        color,
-        packageName: PACKAGE_META[selected.id].formName,
-        quantity: selected.quantity,
+        color: pickedColors[0],
+        colors: JSON.stringify(pickedColors),
+        packageName:
+          mult > 1
+            ? `${PACKAGE_META[selected.id].formName} ×${mult}`
+            : PACKAGE_META[selected.id].formName,
+        quantity: totalItems,
         unitPrice: perPiecePrice(selected),
         deliveryZone,
         deliveryCharge,

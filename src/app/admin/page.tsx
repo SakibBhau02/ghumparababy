@@ -5,6 +5,7 @@ import { ADMIN_COOKIE, verifyToken } from "@/lib/admin-auth";
 import { getDeliveryConfig } from "@/lib/delivery";
 import { getProductConfig } from "@/lib/product";
 import { getLocationEnabled } from "@/lib/site-settings";
+import { getWhatsappConfig } from "@/lib/whatsapp";
 import { AdminDashboard } from "@/components/admin/dashboard";
 import type { Order } from "@prisma/client";
 
@@ -23,11 +24,12 @@ export default async function AdminPage() {
   }
 
   try {
-    const [orders, deliveryConfig, productConfig, locationEnabled] = await Promise.all([
+    const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp] = await Promise.all([
       db.order.findMany({ orderBy: { createdAt: "desc" } }),
       getDeliveryConfig(),
       getProductConfig(),
       getLocationEnabled(),
+      getWhatsappConfig(),
     ]);
 
     return (
@@ -36,6 +38,7 @@ export default async function AdminPage() {
         deliveryConfig={deliveryConfig}
         productConfig={productConfig}
         locationEnabled={locationEnabled}
+        whatsapp={whatsapp}
       />
     );
   } catch {

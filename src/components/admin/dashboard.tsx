@@ -18,6 +18,10 @@ import {
   perPiecePrice,
   type ProductConfig,
 } from "@/lib/product-shared";
+import {
+  TEMPLATE_SLOT_LEGEND,
+  type WhatsappConfig,
+} from "@/lib/whatsapp-shared";
 import { Switch } from "@/components/ui/switch";
 import {
   Activity,
@@ -25,6 +29,7 @@ import {
   Clock,
   Download,
   MapPin,
+  MessageCircle,
   Package,
   LogOut,
   Phone,
@@ -47,6 +52,7 @@ type OrderLike = {
   district: string;
   upazila: string;
   color: string;
+  colors: string;
   packageName: string;
   quantity: number;
   unitPrice: number;
@@ -54,6 +60,7 @@ type OrderLike = {
   deliveryCharge: number;
   totalPrice: number;
   status: string;
+  waSent: boolean;
   createdAt: string | Date;
 };
 
@@ -109,16 +116,31 @@ function colorLabel(id: string): string {
   return PRODUCT_COLORS.find((c) => c.id === id)?.label ?? id;
 }
 
+/** All chosen colors, joined (falls back to the legacy single color). */
+function orderColors(o: OrderLike): string {
+  try {
+    const arr = JSON.parse(o.colors) as unknown;
+    if (Array.isArray(arr) && arr.length > 0) {
+      return arr.map((c) => colorLabel(String(c))).join(", ");
+    }
+  } catch {
+    // fall through to legacy color
+  }
+  return colorLabel(o.color);
+}
+
 export function AdminDashboard({
   initialOrders,
   deliveryConfig: initialConfig,
   productConfig: initialProducts,
   locationEnabled: initialLocationEnabled,
+  whatsapp: initialWhatsapp,
 }: {
   initialOrders: OrderLike[];
   deliveryConfig: DeliveryConfig;
   productConfig: ProductConfig;
   locationEnabled: boolean;
+  whatsapp: WhatsappConfig;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -141,6 +163,8 @@ export function AdminDashboard({
   const [savingProducts, setSavingProducts] = useState(false);
   const [locOn, setLocOn] = useState<boolean>(initialLocationEnabled);
   const [savingLoc, setSavingLoc] = useState(false);
+  const [waInputs, setWaInputs] = useState<WhatsappConfig>(initialWhatsapp);
+  const [savingWa, setSavingWa] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<string>("all");
@@ -173,6 +197,13 @@ export function AdminDashboard({
         body: JSON.stringify({ id, status }),
       });
       if (!res.ok) throw new Error();
+      const data = await res.json().catch(() => null);
+      if (data?.order) {
+        const w = data.order.waSent;
+        setOrders((cur) =>
+          cur.map((o) => (o.id === id ? { ...o, waSent: w ?? o.waSent } : o))
+        );
+      }
       toast({ title: "স্ট্যাটাস আপডেট হয়েছে", description: STATUS_META[status]?.label });
     } catch {
       setOrders(prev);
@@ -303,6 +334,37 @@ export function AdminDashboard({
       toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
     } finally {
       setSavingLoc(false);
+    }
+  };
+
+  const saveWhatsapp = async () => {
+    setSavingWa(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ whatsapp: waInputs }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "সেভ হয়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setWaInputs(data.whatsapp);
+      toast({
+        title: "WhatsApp সেটিংস সেভ হয়েছে",
+        description: data.whatsapp.enabled
+          ? "এখন থেকে confirm করলে কাস্টমারের WhatsApp-এ মেসেজ যাবে।"
+          : "অটো-মেসেজ বন্ধ আছে।",
+      });
+    } catch {
+      toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
+    } finally {
+      setSavingWa(false);
     }
   };
 
@@ -568,6 +630,112 @@ export function AdminDashboard({
           </div>
         </div>
 
+        {/* WhatsApp auto-message settings */}
+        <div className="mt-6 rounded-2xl border border-[#128C4B]/40 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="size-5 text-[#128C4B]" />
+              <div>
+                <h2 className="font-bold text-ink">WhatsApp অটো-মেসেজ (confirm-এ)</h2>
+                <p className="text-xs text-muted-foreground">
+                  চালু থাকলে কোনো অর্ডার confirm করলে কাস্টমারের WhatsApp-এ মেসেজ যাবে (Meta template)।
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={saveWhatsapp}
+                disabled={savingWa}
+                className="rounded-full bg-brand font-bold text-white hover:bg-brand-deep disabled:opacity-60"
+              >
+                {savingWa ? (
+                  <>
+                    <RefreshCw className="mr-1.5 size-4 animate-spin" /> সেভ হচ্ছে...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-1.5 size-4" /> সেভ করুন
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-cream/50 p-3.5 sm:col-span-2">
+              <div>
+                <div className="text-sm font-semibold text-ink">অটো-মেসেজ {waInputs.enabled ? "চালু" : "বন্ধ"}</div>
+                <p className="text-xs text-muted-foreground">Token/ID ছাড়া চালু করলে মেসেজ যাবে না।</p>
+              </div>
+              <Switch
+                checked={waInputs.enabled}
+                onCheckedChange={(v) => setWaInputs((cur) => ({ ...cur, enabled: v }))}
+              />
+            </div>
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5">
+              <label className="text-sm font-semibold text-ink">Phone Number ID *</label>
+              <input
+                value={waInputs.phoneNumberId}
+                onChange={(e) => setWaInputs((cur) => ({ ...cur, phoneNumberId: e.target.value }))}
+                placeholder="যেমন: 123456789012345"
+                inputMode="numeric"
+                className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm font-mono text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Meta developer dashboard → WhatsApp → API Setup</p>
+            </div>
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5">
+              <label className="text-sm font-semibold text-ink">Access Token *</label>
+              <input
+                type="password"
+                value={waInputs.accessToken}
+                onChange={(e) => setWaInputs((cur) => ({ ...cur, accessToken: e.target.value }))}
+                placeholder="EAAxxxx…"
+                className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm font-mono text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Temporary (২৪ ঘণ্টা) বা permanent system-user token</p>
+            </div>
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5">
+              <label className="text-sm font-semibold text-ink">Template Name *</label>
+              <input
+                value={waInputs.templateName}
+                onChange={(e) => setWaInputs((cur) => ({ ...cur, templateName: e.target.value }))}
+                placeholder="যেমন: order_confirm_bn"
+                className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm font-mono text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Meta-তে approve হওয়া template-এর ঠিক নাম</p>
+            </div>
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5">
+              <label className="text-sm font-semibold text-ink">Template Language</label>
+              <input
+                value={waInputs.languageCode}
+                onChange={(e) => setWaInputs((cur) => ({ ...cur, languageCode: e.target.value }))}
+                placeholder="bn"
+                className="mt-1.5 h-10 w-full rounded-lg border border-border bg-white px-3 text-sm font-mono text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">Template যে ভাষায় approve হয়েছে (যেমন: bn)</p>
+            </div>
+            <div className="rounded-xl border border-border bg-cream/50 p-3.5 sm:col-span-2">
+              <label className="text-sm font-semibold text-ink">মেসেজ টেমপ্লেট (রেফারেন্স)</label>
+              <textarea
+                value={waInputs.templateBody}
+                onChange={(e) => setWaInputs((cur) => ({ ...cur, templateBody: e.target.value }))}
+                rows={4}
+                placeholder="Meta-তে approve হওয়া template-এর body হুবহু এখানে রাখুন"
+                className="mt-1.5 w-full rounded-lg border border-border bg-white px-3 py-2 text-sm leading-relaxed text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+              />
+              <div className="mt-2 rounded-lg bg-cream p-3 text-xs leading-relaxed text-muted-foreground">
+                <b className="text-ink">স্লটের অর্থ (পাঠানোর সময় এই ক্রমে বসবে):</b>
+                <ul className="mt-1 space-y-0.5">
+                  {TEMPLATE_SLOT_LEGEND.map((s) => (
+                    <li key={s.slot}>
+                      <span className="font-mono font-bold text-ink">{s.slot}</span> — {s.meaning}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Filter */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
           {[
@@ -617,6 +785,11 @@ export function AdminDashboard({
                           <span className={`size-1.5 rounded-full ${meta.dot}`} />
                           {meta.label}
                         </span>
+                        {o.waSent && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700">
+                            📲 WhatsApp ✓
+                          </span>
+                        )}
                       </div>
                       <div className="mt-2 font-bold text-ink">{o.name}</div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
@@ -652,7 +825,7 @@ export function AdminDashboard({
                     <div className="flex flex-col items-start gap-3 sm:items-end">
                       <div className="text-right">
                         <div className="text-sm text-muted-foreground">
-                          {colorLabel(o.color)} • {o.packageName} • {toBn(o.quantity)}টি
+                          {orderColors(o)} • {o.packageName} • {toBn(o.quantity)}টি
                         </div>
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {o.deliveryZone
