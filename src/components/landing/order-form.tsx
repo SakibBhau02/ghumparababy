@@ -72,12 +72,15 @@ export function OrderForm({
   const freeShip = isFreeShipping(qty);
   const firstColor = PRODUCT_COLORS.find((c) => c.id === colors[0]) ?? PRODUCT_COLORS[1];
 
-  // Keep exactly one color slot per item when quantity changes
+  // Keep exactly one color slot per item when quantity changes.
+  // New slots copy the FIRST chosen color (not a fixed default) — most
+  // buyers want matching pieces, so the machine does it for them (Tesler).
   useEffect(() => {
     setColors((cur) => {
       if (cur.length === totalItems) return cur;
       if (cur.length > totalItems) return cur.slice(0, totalItems);
-      return [...cur, ...Array<string>(totalItems - cur.length).fill("pink")];
+      const fill = cur[0] ?? "pink";
+      return [...cur, ...Array<string>(totalItems - cur.length).fill(fill)];
     });
   }, [totalItems]);
 
@@ -315,6 +318,37 @@ export function OrderForm({
                       ২. কালার বেছে নিন
                       {totalItems > 1 ? ` (${toBn(totalItems)}টি পিসের জন্য ${toBn(totalItems)}টি কালার)` : ""}
                     </Label>
+                    {/* One-tap: paint every piece the same color, then tweak individuals */}
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-2xl bg-cream p-3">
+                      <span className="text-xs font-bold text-ink">সবগুলো একসাথে:</span>
+                      {PRODUCT_COLORS.map((c) => {
+                        const allThis = colors.length > 0 && colors.every((v) => v === c.id);
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setColors(Array<string>(totalItems).fill(c.id));
+                              fireInitiate();
+                            }}
+                            aria-pressed={allThis}
+                            aria-label={`সবগুলো ${c.label}`}
+                            title={`সবগুলো ${c.label}`}
+                            className={`flex items-center gap-1.5 rounded-full border-2 py-1 pl-1 pr-2.5 transition-all ${
+                              allThis ? "border-brand bg-brand-soft/60" : "border-border bg-white hover:border-honey/60"
+                            }`}
+                          >
+                            <span
+                              className="inline-block size-5 rounded-full border border-black/20"
+                              style={{ backgroundColor: c.hex }}
+                            />
+                            <span className={`text-xs font-semibold ${allThis ? "text-brand" : "text-muted-foreground"}`}>
+                              {c.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                     <div className="mt-2.5 space-y-4">
                       {colors.map((col, i) => (
                         <div key={i}>
