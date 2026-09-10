@@ -1,4 +1,5 @@
 import { toBn } from "@/lib/landing-data";
+import { siteImage } from "@/lib/site-images";
 import Image from "next/image";
 
 const STEPS = [
@@ -36,7 +37,7 @@ export function HowToUse() {
           <div className="relative order-2 mx-auto w-full max-w-sm lg:order-1">
             <div className="relative aspect-square overflow-hidden rounded-[2.5rem] border-8 border-white shadow-2xl shadow-brand/20">
               <Image
-                src="/images/swaddle-pink.jpg"
+                src={siteImage("/images/swaddle-pink.jpg")}
                 alt="সোয়াডেল ব্যবহারের নিয়ম দেখানো হচ্ছে"
                 fill
                 className="object-cover"

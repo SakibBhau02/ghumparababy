@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Hind_Siliguri } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { siteImage } from "@/lib/site-images";
 
 const hindSiliguri = Hind_Siliguri({
   variable: "--font-hind",
@@ -23,7 +24,7 @@ export const metadata: Metadata = {
     "শীতের বেবি প্রোডাক্ট",
   ],
   icons: {
-    icon: "/images/swaddle-pink.jpg",
+    icon: siteImage("/images/swaddle-pink.jpg"),
   },
   openGraph: {
     title: "ঘুমপাড়া বেবি — শান্ত ঘুম, নিরাপদ শৈশব",
@@ -31,6 +32,7 @@ export const metadata: Metadata = {
       "মোরো রিফ্লেক্স কমিয়ে বাচ্চাকে দিন গভীর ঘুম। সারা দেশে ক্যাশ অন ডেলিভারি।",
     type: "website",
     locale: "bn_BD",
+    images: [siteImage("/images/swaddle-blue.jpg")],
   },
 };
 

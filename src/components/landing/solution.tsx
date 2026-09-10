@@ -2,6 +2,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import type { ProductConfig } from "@/lib/product-shared";
 import { priceForQty } from "@/lib/product-shared";
+import { siteImage } from "@/lib/site-images";
 import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import { ShieldCheck, Snowflake, BedDouble, Droplets, Feather, HeartHandshake } from "lucide-react";
 
@@ -69,7 +70,7 @@ export function Solution({
           <div className="relative mx-auto w-full max-w-md lg:col-span-2">
             <div className="relative aspect-[4/5] overflow-hidden rounded-[2.5rem] border-8 border-white shadow-2xl shadow-brand/20">
               <Image
-                src="/images/swaddle-cream.jpg"
+                src={siteImage("/images/swaddle-cream.jpg")}
                 alt="ঘুমপাড়া সোয়াডেলে মোড়া শান্ত ঘুমন্ত শিশু"
                 fill
                 className="object-cover"

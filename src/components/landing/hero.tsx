@@ -2,6 +2,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toBn } from "@/lib/landing-data";
+import { siteImage } from "@/lib/site-images";
 import type { ProductConfig } from "@/lib/product-shared";
 import { priceForQty } from "@/lib/product-shared";
 import { isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
@@ -112,7 +113,7 @@ export function Hero({
         <div className="relative mx-auto w-full max-w-md lg:max-w-lg">
           <div className="relative aspect-square overflow-hidden rounded-[2.5rem] border-8 border-white shadow-2xl shadow-brand/20">
             <Image
-              src="/images/swaddle-blue.jpg"
+              src={siteImage("/images/swaddle-blue.jpg")}
               alt="ঘুমপাড়া সোয়াডেল পরা নবজাতক — গভীর ঘুমে নিরাপদ"
               fill
               priority

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { ADMIN_COOKIE, verifyToken } from "@/lib/admin-auth";
 import { getDeliveryConfig } from "@/lib/delivery";
 import { PRODUCT_COLORS, toBn, HOTLINE } from "@/lib/landing-data";
+import { siteImage } from "@/lib/site-images";
 import { PrintButton } from "@/components/admin/print-button";
 import type { Order } from "@prisma/client";
 
@@ -43,7 +44,8 @@ function colorMeta(id: string): { label: string; hex: string } {
 
 function productImage(order: Order): string {
   const first = colorIds(order)[0] ?? order.color;
-  return PRODUCT_COLORS.find((c) => c.id === first)?.image ?? "/images/swaddle-pink.jpg";
+  const rel = PRODUCT_COLORS.find((c) => c.id === first)?.image ?? "/images/swaddle-pink.jpg";
+  return siteImage(rel);
 }
 
 function locationLine(order: Order): string {

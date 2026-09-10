@@ -23,7 +23,9 @@ import type { ProductConfig } from "@/lib/product-shared";
 import { priceForQty } from "@/lib/product-shared";
 import type { PixelConfig } from "@/lib/pixel-shared";
 
-export const dynamic = "force-dynamic";
+// Static with 60s revalidation (ISR): Vercel serves cached HTML so traffic
+// spikes never hammer Neon — admin price/setting changes appear within a minute.
+export const revalidate = 60;
 
 export default async function Home() {
   const [deliveryConfig, pixelConfig, productConfig, locationEnabled]: [

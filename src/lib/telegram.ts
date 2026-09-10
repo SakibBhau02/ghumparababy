@@ -7,6 +7,7 @@ import {
   type TelegramConfig,
 } from "@/lib/telegram-shared";
 import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
+import { R2_BASE_URL, R2_IMAGES_LIVE } from "@/lib/site-images";
 
 export const TELEGRAM_SETTING_KEY = "telegram_config";
 
@@ -63,10 +64,33 @@ function colorLabel(id: string): string {
   return PRODUCT_COLORS.find((c) => c.id === id)?.label ?? id;
 }
 
-function colorImageFile(id: string): string | null {
-  const img = PRODUCT_COLORS.find((c) => c.id === id)?.image;
-  if (!img) return null;
-  return path.join(process.cwd(), "public", img.replace(/^\//, ""));
+/**
+ * Load one product photo as bytes — from R2 when live, else local disk.
+ * Returns null when unreadable (caller falls back to text-only message).
+ */
+async function loadPhotoBytes(id: string): Promise<Buffer | null> {
+  if (!PRODUCT_COLORS.some((c) => c.id === id)) return null;
+  const relPath = `/images/swaddle-${id}.jpg`;
+  if (R2_IMAGES_LIVE) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const res = await fetch(`${R2_BASE_URL}${relPath}`, { signal: controller.signal });
+        if (!res.ok) return null;
+        return Buffer.from(await res.arrayBuffer());
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return null;
+    }
+  }
+  try {
+    return await readFile(path.join(process.cwd(), "public", relPath.slice(1)));
+  } catch {
+    return null;
+  }
 }
 
 /** "গোলাপি ×২, লাল ×১" + total piece count. */
@@ -272,13 +296,8 @@ export async function sendNewOrderAlert(
 
     const photos: Buffer[] = [];
     for (const id of uniqueColors) {
-      const file = colorImageFile(id);
-      if (!file) continue;
-      try {
-        photos.push(await readFile(file));
-      } catch {
-        /* missing image file — skip it */
-      }
+      const bytes = await loadPhotoBytes(id);
+      if (bytes) photos.push(bytes);
       if (photos.length >= MAX_PHOTOS) break;
     }
 
