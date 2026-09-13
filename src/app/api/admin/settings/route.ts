@@ -25,6 +25,16 @@ import {
   sanitizeSteadfastConfig,
   type SteadfastConfig,
 } from "@/lib/steadfast-shared";
+import { getShopbaseConfig, saveShopbaseConfig } from "@/lib/shopbase";
+import {
+  sanitizeShopbaseConfig,
+  type ShopbaseConfig,
+} from "@/lib/shopbase-shared";
+import { getManyDialConfig, saveManyDialConfig } from "@/lib/manydial";
+import {
+  sanitizeManyDialConfig,
+  type ManyDialConfig,
+} from "@/lib/manydial-shared";
 import { isAdminRequest } from "@/lib/admin-auth";
 
 const MAX_CHARGE = 999;
@@ -34,15 +44,26 @@ export async function GET(req: NextRequest) {
   if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "অনুমতি নেই।" }, { status: 401 });
   }
-  const [config, products, locationEnabled, whatsapp, telegram, steadfast] = await Promise.all([
+  const [config, products, locationEnabled, whatsapp, telegram, steadfast, shopbase, manydial] = await Promise.all([
     getDeliveryConfig(),
     getProductConfig(),
     getLocationEnabled(),
     getWhatsappConfig(),
     getTelegramConfig(),
     getSteadfastConfig(),
+    getShopbaseConfig(),
+    getManyDialConfig(),
   ]);
-  return NextResponse.json({ config, products, locationEnabled, whatsapp, telegram, steadfast });
+  return NextResponse.json({
+    config,
+    products,
+    locationEnabled,
+    whatsapp,
+    telegram,
+    steadfast,
+    shopbase,
+    manydial,
+  });
 }
 
 /**
@@ -65,6 +86,8 @@ export async function PUT(req: NextRequest) {
       whatsapp?: unknown;
       telegram?: unknown;
       steadfast?: unknown;
+      shopbase?: unknown;
+      manydial?: unknown;
     };
     const result: {
       config?: DeliveryConfig;
@@ -73,6 +96,8 @@ export async function PUT(req: NextRequest) {
       whatsapp?: WhatsappConfig;
       telegram?: TelegramConfig;
       steadfast?: SteadfastConfig;
+      shopbase?: ShopbaseConfig;
+      manydial?: ManyDialConfig;
     } = {};
 
     if (body.charges !== undefined || body.notes !== undefined) {
@@ -159,6 +184,30 @@ export async function PUT(req: NextRequest) {
       }
       await saveSteadfastConfig(sane);
       result.steadfast = sane;
+    }
+
+    if (body.shopbase !== undefined) {
+      const sane = sanitizeShopbaseConfig(body.shopbase);
+      if (!sane) {
+        return NextResponse.json(
+          { error: "ShopBase সেটিংস সঠিক নয়।" },
+          { status: 400 }
+        );
+      }
+      await saveShopbaseConfig(sane);
+      result.shopbase = sane;
+    }
+
+    if (body.manydial !== undefined) {
+      const sane = sanitizeManyDialConfig(body.manydial);
+      if (!sane) {
+        return NextResponse.json(
+          { error: "ManyDial সেটিংস সঠিক নয়।" },
+          { status: 400 }
+        );
+      }
+      const saved = await saveManyDialConfig(sane);
+      result.manydial = saved;
     }
 
     if (Object.keys(result).length === 0) {

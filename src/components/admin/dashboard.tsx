@@ -25,6 +25,10 @@ import {
 } from "@/lib/whatsapp-shared";
 import { type TelegramConfig } from "@/lib/telegram-shared";
 import { type SteadfastConfig } from "@/lib/steadfast-shared";
+import { type ShopbaseConfig } from "@/lib/shopbase-shared";
+import { type ManyDialConfig } from "@/lib/manydial-shared";
+import { ShopbaseSetup } from "@/components/admin/shopbase-setup";
+import { ManyDialSetup } from "@/components/admin/manydial-setup";
 import { Switch } from "@/components/ui/switch";
 import {
   Tabs,
@@ -43,6 +47,8 @@ import {
   MapPin,
   MessageCircle,
   Package,
+  PhoneOutgoing,
+  ShoppingBag,
   LogOut,
   LifeBuoy,
   Pencil,
@@ -83,6 +89,7 @@ type OrderLike = {
   waSent: boolean;
   consignmentId: string;
   trackingCode: string;
+  shopbaseOrderId: string;
   adminNote: string;
   createdAt: string | Date;
 };
@@ -208,6 +215,8 @@ export function AdminDashboard({
   whatsapp: initialWhatsapp,
   telegram: initialTelegram,
   steadfast: initialSteadfast,
+  shopbase: initialShopbase,
+  manydial: initialManyDial,
   customers: initialCustomers,
 }: {
   initialOrders: OrderLike[];
@@ -217,6 +226,8 @@ export function AdminDashboard({
   whatsapp: WhatsappConfig;
   telegram: TelegramConfig;
   steadfast: SteadfastConfig;
+  shopbase: ShopbaseConfig;
+  manydial: ManyDialConfig;
   customers: CustomerLike[];
 }) {
   const router = useRouter();
@@ -720,6 +731,70 @@ export function AdminDashboard({
       toast({ title: "পাঠানো ব্যর্থ", variant: "destructive" });
     } finally {
       setSendingSfId(null);
+    }
+  };
+
+  const [sendingSbId, setSendingSbId] = useState<string | null>(null);
+  const [callingMdId, setCallingMdId] = useState<string | null>(null);
+
+  const sendToShopbase = async (id: string) => {
+    setSendingSbId(id);
+    try {
+      const res = await fetch("/api/admin/shopbase/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "ShopBase-এ যায়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setOrders((cur) =>
+        cur.map((x) =>
+          x.id === id ? { ...x, shopbaseOrderId: data.shopbaseOrderId ?? "" } : x
+        )
+      );
+      toast({
+        title: data.duplicate ? "এটা আগেই পাঠানো ছিল" : "ShopBase-এ অর্ডার গেছে ✓",
+        description: `ShopBase ID: ${data.shopbaseOrderId}`,
+      });
+    } catch {
+      toast({ title: "পাঠানো ব্যর্থ", variant: "destructive" });
+    } finally {
+      setSendingSbId(null);
+    }
+  };
+
+  const recallManyDial = async (id: string) => {
+    setCallingMdId(id);
+    try {
+      const res = await fetch("/api/admin/manydial/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "কল যায়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "কনফার্মেশন কল চলে গেছে ✓",
+        description: "কাস্টমার কল ধরে ১/২ চাপলে Telegram-এ খবর আসবে।",
+      });
+    } catch {
+      toast({ title: "কল ব্যর্থ", variant: "destructive" });
+    } finally {
+      setCallingMdId(null);
     }
   };
 
@@ -1459,6 +1534,12 @@ export function AdminDashboard({
           </div>
         </div>
 
+        {/* ShopBase BD fulfillment setup + one-click push */}
+        <ShopbaseSetup initial={initialShopbase} />
+
+        {/* ManyDial call automation setup + manual re-call */}
+        <ManyDialSetup initial={initialManyDial} />
+
         {/* Pixel setup link */}
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-white p-5 shadow-sm">
           <div className="flex items-center gap-2">
@@ -1663,6 +1744,14 @@ export function AdminDashboard({
                             📦 {o.consignmentId}
                           </span>
                         ) : null}
+                        {o.shopbaseOrderId ? (
+                          <span
+                            title="ShopBase BD-তে পাঠানো হয়েছে"
+                            className="inline-flex items-center gap-1 rounded-lg bg-indigo-100 px-2 py-0.5 font-mono text-xs font-bold text-indigo-800"
+                          >
+                            🛍️ {o.shopbaseOrderId}
+                          </span>
+                        ) : null}
                         <span
                           className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold ${meta.badge}`}
                         >
@@ -1779,6 +1868,34 @@ export function AdminDashboard({
                               <RefreshCw className="size-4 animate-spin" />
                             ) : (
                               <Truck className="size-4" />
+                            )}
+                          </button>
+                        )}
+                        {!o.shopbaseOrderId && (
+                          <button
+                            onClick={() => sendToShopbase(o.id)}
+                            disabled={sendingSbId === o.id}
+                            title="ShopBase BD-তে পাঠান (one-click)"
+                            className="grid size-9 place-items-center rounded-full border border-border bg-white text-muted-foreground transition-colors hover:border-indigo-500 hover:text-indigo-600 disabled:opacity-60"
+                          >
+                            {sendingSbId === o.id ? (
+                              <RefreshCw className="size-4 animate-spin" />
+                            ) : (
+                              <ShoppingBag className="size-4" />
+                            )}
+                          </button>
+                        )}
+                        {initialManyDial.enabled && o.status === "pending" && (
+                          <button
+                            onClick={() => recallManyDial(o.id)}
+                            disabled={callingMdId === o.id}
+                            title="কনফার্মেশন কল পাঠান (ManyDial)"
+                            className="grid size-9 place-items-center rounded-full border border-border bg-white text-muted-foreground transition-colors hover:border-teal-500 hover:text-teal-600 disabled:opacity-60"
+                          >
+                            {callingMdId === o.id ? (
+                              <RefreshCw className="size-4 animate-spin" />
+                            ) : (
+                              <PhoneOutgoing className="size-4" />
                             )}
                           </button>
                         )}

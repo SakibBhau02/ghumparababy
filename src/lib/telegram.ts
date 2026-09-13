@@ -8,6 +8,7 @@ import {
 } from "@/lib/telegram-shared";
 import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
 import { R2_IMAGES_LIVE, siteImage } from "@/lib/site-images";
+import { isTelegramReady } from "@/lib/telegram-shared";
 
 export const TELEGRAM_SETTING_KEY = "telegram_config";
 
@@ -276,6 +277,26 @@ export async function checkChat(
     };
   } catch {
     return { ok: false, error: "Telegram-এ সংযোগ করা যায়নি। আবার চেষ্টা করুন।" };
+  }
+}
+
+/**
+ * Send a plain text message to the configured admin chat (e.g. webhook
+ * notifications). Never throws.
+ */
+export async function sendAdminText(text: string): Promise<TgResult> {
+  try {
+    const config = await getTelegramConfig();
+    if (!isTelegramReady(config)) return { ok: false, error: "telegram not ready" };
+    const r = await tgFetch(
+      config.botToken,
+      "sendMessage",
+      JSON.stringify({ chat_id: config.chatId, text: text.slice(0, 4000) }),
+      true
+    );
+    return r.ok ? { ok: true } : { ok: false, error: `telegram ${r.status}: ${r.text}` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "send failed" };
   }
 }
 

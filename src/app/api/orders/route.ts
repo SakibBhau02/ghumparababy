@@ -8,6 +8,13 @@ import { getProductConfig } from "@/lib/product";
 import { getLocationEnabled } from "@/lib/site-settings";
 import { getTelegramConfig, sendNewOrderAlert } from "@/lib/telegram";
 import { isTelegramReady } from "@/lib/telegram-shared";
+import {
+  dispatchConfirmationCall,
+  getManyDialConfig,
+  manyDialWebhookUrl,
+  requestOrigin,
+} from "@/lib/manydial";
+import { isManyDialReady } from "@/lib/manydial-shared";
 import { sendPurchaseCapi } from "@/lib/capi";
 import { getPixelConfig } from "@/lib/pixel-config";
 import { isCapiReady } from "@/lib/pixel-shared";
@@ -18,8 +25,10 @@ import {
   priceForQty,
 } from "@/lib/product-shared";
 import { BD_PHONE_EXAMPLE, normalizeBdPhone } from "@/lib/phone-shared";
+import { PRODUCT_COLORS } from "@/lib/landing-data";
 
-const COLORS = ["blue", "pink", "red", "beige", "cream", "grey"];
+// Server-side color whitelist — always in sync with the landing palette.
+const COLORS: string[] = PRODUCT_COLORS.map((c) => c.id);
 
 export async function POST(req: NextRequest) {
   try {
@@ -270,6 +279,24 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) {
       console.error("telegram send crashed:", e);
+    }
+
+    // ManyDial auto confirmation call (never blocks the order).
+    // Customer presses 1 = confirm, 2 = cancel → webhook updates the order.
+    try {
+      const mdConfig = await getManyDialConfig();
+      if (isManyDialReady(mdConfig) && mdConfig.autoCall) {
+        const result = await dispatchConfirmationCall(mdConfig, {
+          callPayload: order.orderCode,
+          phone: order.phone,
+          webhookUrl: manyDialWebhookUrl(requestOrigin(req), mdConfig.webhookSecret),
+        });
+        if (!result.ok) {
+          console.error("manydial call failed:", order.orderCode, result.error);
+        }
+      }
+    } catch (e) {
+      console.error("manydial call crashed:", e);
     }
 
     return NextResponse.json({

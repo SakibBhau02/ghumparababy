@@ -33,6 +33,7 @@ model Order {
   waSent        Boolean  @default(false)
   consignmentId String   @default("")
   trackingCode  String   @default("")
+  shopbaseOrderId String @default("")
   adminNote     String   @default("")
   createdAt     DateTime @default(now())
 }
