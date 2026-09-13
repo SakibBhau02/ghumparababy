@@ -65,16 +65,22 @@ export function OrderEditModal({
   products,
   zones,
   locationEnabled,
+  mode = "edit",
   onClose,
   onSaved,
+  onShopbaseSent,
 }: {
   order: EditableOrder;
   products: ProductConfig;
   zones: DeliveryZone[];
   locationEnabled: boolean;
+  /** "edit" = save only; "shopbase" = save then push to ShopBase BD. */
+  mode?: "edit" | "shopbase";
   onClose: () => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onSaved: (updated: any) => void;
+  /** shopbase mode only — receives the ShopBase order ID after a successful push. */
+  onShopbaseSent?: (shopbaseOrderId: string) => void;
 }) {
   const initial = parseQty(order.quantity);
   const [name, setName] = useState(order.name);
@@ -92,6 +98,7 @@ export function OrderEditModal({
     upazila: order.upazila,
   });
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { perPiece, total: itemsTotal } = priceForQty(products, qty);
@@ -137,6 +144,33 @@ export function OrderEditModal({
         setError(data.error ?? "সেভ হয়নি। আবার চেষ্টা করুন।");
         return;
       }
+
+      // shopbase mode: edits saved → now push the (fresh) order to ShopBase.
+      if (mode === "shopbase") {
+        setSending(true);
+        try {
+          const push = await fetch("/api/admin/shopbase/push", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderId: order.id }),
+          });
+          const pushData = await push.json();
+          if (!push.ok) {
+            // Edits ARE saved — show the push error but still refresh the card.
+            onSaved(data.order);
+            setError(pushData.error ?? "ShopBase-এ পাঠানো যায়নি। আবার চেষ্টা করুন।");
+            return;
+          }
+          onShopbaseSent?.(pushData.shopbaseOrderId ?? "");
+        } catch {
+          onSaved(data.order);
+          setError("নেটওয়ার্ক সমস্যা — ShopBase-এ যায়নি। আবার চেষ্টা করুন।");
+          return;
+        } finally {
+          setSending(false);
+        }
+      }
+
       onSaved(data.order);
     } catch {
       setError("নেটওয়ার্ক সমস্যা। আবার চেষ্টা করুন।");
@@ -150,8 +184,13 @@ export function OrderEditModal({
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-[1.5rem]">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold text-ink">
-            ✏️ অর্ডার এডিট করুন
+            {mode === "shopbase" ? "🛍️ ShopBase-এ পাঠান — আগে যাচাই/এডিট করুন" : "✏️ অর্ডার এডিট করুন"}
           </DialogTitle>
+          {mode === "shopbase" && (
+            <p className="text-sm font-normal text-muted-foreground">
+              কিছু বদলাতে চাইলে করুন — না চাইলে তারপরও <b>পাঠিয়ে দিন</b> চাপুন। এডিটগুলো আগে সেভ হয়ে তারপর ShopBase BD-তে যাবে।
+            </p>
+          )}
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -255,18 +294,25 @@ export function OrderEditModal({
             <span className="text-xl font-bold text-brand">৳{toBn(previewTotal)}</span>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose} className="rounded-full">
+            <Button variant="outline" onClick={onClose} className="rounded-full" disabled={sending}>
               বাতিল
             </Button>
             <Button
               onClick={save}
               disabled={saving}
-              className="rounded-full bg-brand font-bold text-white hover:bg-brand-deep disabled:opacity-60"
+              className={`rounded-full font-bold text-white disabled:opacity-60 ${
+                mode === "shopbase"
+                  ? "bg-indigo-600 hover:bg-indigo-700"
+                  : "bg-brand hover:bg-brand-deep"
+              }`}
             >
-              {saving ? (
+              {saving || sending ? (
                 <>
-                  <Loader2 className="mr-1.5 size-4 animate-spin" /> সেভ হচ্ছে...
+                  <Loader2 className="mr-1.5 size-4 animate-spin" />
+                  {mode === "shopbase" ? "পাঠানো হচ্ছে..." : "সেভ হচ্ছে..."}
                 </>
+              ) : mode === "shopbase" ? (
+                "🛍️ সেভ করে ShopBase-এ পাঠান"
               ) : (
                 "সেভ করুন"
               )}

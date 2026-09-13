@@ -284,6 +284,7 @@ export function AdminDashboard({
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<string>("all");
   const [editingOrder, setEditingOrder] = useState<OrderLike | null>(null);
+  const [shopbaseOrder, setShopbaseOrder] = useState<OrderLike | null>(null);
   const [deleteArm, setDeleteArm] = useState<string | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -734,41 +735,7 @@ export function AdminDashboard({
     }
   };
 
-  const [sendingSbId, setSendingSbId] = useState<string | null>(null);
   const [callingMdId, setCallingMdId] = useState<string | null>(null);
-
-  const sendToShopbase = async (id: string) => {
-    setSendingSbId(id);
-    try {
-      const res = await fetch("/api/admin/shopbase/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast({
-          title: "ShopBase-এ যায়নি",
-          description: data.error ?? "আবার চেষ্টা করুন।",
-          variant: "destructive",
-        });
-        return;
-      }
-      setOrders((cur) =>
-        cur.map((x) =>
-          x.id === id ? { ...x, shopbaseOrderId: data.shopbaseOrderId ?? "" } : x
-        )
-      );
-      toast({
-        title: data.duplicate ? "এটা আগেই পাঠানো ছিল" : "ShopBase-এ অর্ডার গেছে ✓",
-        description: `ShopBase ID: ${data.shopbaseOrderId}`,
-      });
-    } catch {
-      toast({ title: "পাঠানো ব্যর্থ", variant: "destructive" });
-    } finally {
-      setSendingSbId(null);
-    }
-  };
 
   const recallManyDial = async (id: string) => {
     setCallingMdId(id);
@@ -1873,16 +1840,11 @@ export function AdminDashboard({
                         )}
                         {!o.shopbaseOrderId && (
                           <button
-                            onClick={() => sendToShopbase(o.id)}
-                            disabled={sendingSbId === o.id}
-                            title="ShopBase BD-তে পাঠান (one-click)"
-                            className="grid size-9 place-items-center rounded-full border border-border bg-white text-muted-foreground transition-colors hover:border-indigo-500 hover:text-indigo-600 disabled:opacity-60"
+                            onClick={() => setShopbaseOrder(o)}
+                            title="ShopBase BD-তে পাঠান (আগে যাচাই/এডিট)"
+                            className="grid size-9 place-items-center rounded-full border border-border bg-white text-muted-foreground transition-colors hover:border-indigo-500 hover:text-indigo-600"
                           >
-                            {sendingSbId === o.id ? (
-                              <RefreshCw className="size-4 animate-spin" />
-                            ) : (
-                              <ShoppingBag className="size-4" />
-                            )}
+                            <ShoppingBag className="size-4" />
                           </button>
                         )}
                         {initialManyDial.enabled && o.status === "pending" && (
@@ -1936,6 +1898,31 @@ export function AdminDashboard({
               setOrders((cur) => cur.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)));
               setEditingOrder(null);
               toast({ title: "অর্ডার আপডেট হয়েছে" });
+            }}
+          />
+        )}
+        {shopbaseOrder && (
+          <OrderEditModal
+            order={shopbaseOrder}
+            products={products}
+            zones={config.zones}
+            locationEnabled={locOn}
+            mode="shopbase"
+            onClose={() => setShopbaseOrder(null)}
+            onSaved={(updated) => {
+              setOrders((cur) => cur.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)));
+            }}
+            onShopbaseSent={(sbId) => {
+              setOrders((cur) =>
+                cur.map((x) =>
+                  x.id === shopbaseOrder.id ? { ...x, shopbaseOrderId: sbId } : x
+                )
+              );
+              setShopbaseOrder(null);
+              toast({
+                title: "ShopBase-এ অর্ডার গেছে ✓",
+                description: `ShopBase ID: ${sbId}`,
+              });
             }}
           />
         )}
