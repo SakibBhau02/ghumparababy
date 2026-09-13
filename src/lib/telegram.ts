@@ -7,7 +7,7 @@ import {
   type TelegramConfig,
 } from "@/lib/telegram-shared";
 import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
-import { R2_BASE_URL, R2_IMAGES_LIVE } from "@/lib/site-images";
+import { R2_IMAGES_LIVE, siteImage } from "@/lib/site-images";
 
 export const TELEGRAM_SETTING_KEY = "telegram_config";
 
@@ -76,7 +76,7 @@ async function loadPhotoBytes(id: string): Promise<Buffer | null> {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15000);
       try {
-        const res = await fetch(`${R2_BASE_URL}${relPath}`, { signal: controller.signal });
+        const res = await fetch(siteImage(relPath), { signal: controller.signal });
         if (!res.ok) return null;
         return Buffer.from(await res.arrayBuffer());
       } finally {

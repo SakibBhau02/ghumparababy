@@ -14,8 +14,17 @@ export const R2_BASE_URL =
 /** Flip to true once the bucket holds /images/* + /logo.svg. */
 export const R2_IMAGES_LIVE = true;
 
+/**
+ * Cache-bust version. Bump this whenever any image under /images or
+ * logo.svg is replaced in the R2 bucket — same-filename updates are
+ * otherwise pinned in browsers/CDN by the old cached copy.
+ */
+export const IMAGE_VERSION = "2";
+
 /** Resolve a "/images/..." or "/logo.svg" path to local or R2 URL. */
 export function siteImage(path: string): string {
   if (!path.startsWith("/")) return path;
-  return R2_IMAGES_LIVE ? `${R2_BASE_URL}${path}` : path;
+  return R2_IMAGES_LIVE
+    ? `${R2_BASE_URL}${path}?v=${IMAGE_VERSION}`
+    : `${path}?v=${IMAGE_VERSION}`;
 }
