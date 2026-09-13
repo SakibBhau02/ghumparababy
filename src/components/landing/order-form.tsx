@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { PRODUCT_COLORS, toBn, HOTLINE, HOTLINE_LINK } from "@/lib/landing-data";
+import { PRODUCT_COLORS, toBn, HOTLINE, HOTLINE_LINK, WHATSAPP_NUMBER } from "@/lib/landing-data";
+import { BD_PHONE_EXAMPLE, normalizeBdPhone } from "@/lib/phone-shared";
 import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import {
   MAX_QTY,
@@ -46,6 +47,7 @@ export function OrderForm({
     upazila: "",
   });
   const [loading, setLoading] = useState(false);
+  const [duplicate, setDuplicate] = useState<{ orderCode: string } | null>(null);
   const [success, setSuccess] = useState<{
     orderCode: string;
     productPrice: number;
@@ -113,6 +115,10 @@ export function OrderForm({
       const data = await res.json();
 
       if (!res.ok) {
+        if (res.status === 429 && data?.code === "duplicate") {
+          setDuplicate({ orderCode: data.orderCode ?? "" });
+          return;
+        }
         toast({
           title: "অর্ডার সম্পন্ন হয়নি",
           description: data.error ?? "কিছু একটা সমস্যা হয়েছে, আবার চেষ্টা করুন।",
@@ -405,7 +411,7 @@ export function OrderForm({
                         className="mt-1.5 h-12 rounded-xl border-border bg-cream/60 focus-visible:ring-brand"
                       />
                     </div>
-                    <div>
+                      <div>
                       <Label htmlFor="phone" className="text-sm text-muted-foreground">
                         মোবাইল নম্বর *
                       </Label>
@@ -422,6 +428,15 @@ export function OrderForm({
                         required
                         className="mt-1.5 h-12 rounded-xl border-border bg-cream/60 focus-visible:ring-brand"
                       />
+                      {phone.trim() !== "" && !normalizeBdPhone(phone) ? (
+                        <p className="mt-1 text-xs font-semibold text-destructive">
+                          ⚠️ সঠিক বাংলাদেশি নম্বর দিন (যেমন: {BD_PHONE_EXAMPLE}) — ভুল নম্বরে অর্ডার সাবমিট হবে না।
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          01 দিয়ে ১১ ডিজিট — 880/+880 সহ দিলেও চলবে।
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="address" className="text-sm text-muted-foreground">
@@ -545,6 +560,54 @@ export function OrderForm({
           </div>
         )}
       </div>
+
+      {/* Duplicate-order popup: already ordered within 24h */}
+      {duplicate && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="ডুপ্লিকেট অর্ডার"
+          className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
+          onClick={() => setDuplicate(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-[2rem] bg-white p-7 text-center shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-5xl">⏳</div>
+            <h3 className="mt-3 text-xl font-bold text-ink">
+              আপনি ইতিমধ্যে অর্ডার করেছেন
+            </h3>
+            {duplicate.orderCode ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                অর্ডার কোড: <span className="font-mono font-bold text-brand">{duplicate.orderCode}</span>
+              </p>
+            ) : null}
+            <p className="mt-3 rounded-2xl bg-cream p-4 text-sm leading-relaxed text-ink">
+              ভুলে দুবার চাপ পড়ে গেছে মনে হচ্ছে। আবার অর্ডার করতে হলে{" "}
+              <b>২৪ ঘণ্টা</b> অপেক্ষা করুন — আমাদের প্রতিনিধি এর মধ্যেই কল করে
+              কনফার্ম করবেন।
+            </p>
+            <a
+              href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+                `আসসালামু আলাইকুম! আমি অর্ডার করেছি${duplicate.orderCode ? ` (কোড: ${duplicate.orderCode})` : ""} — এ বিষয়ে কথা বলতে চাই।`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 flex h-13 w-full items-center justify-center gap-2 rounded-full bg-[#128C4B] py-3.5 text-base font-bold text-white hover:opacity-90"
+            >
+              WhatsApp-এ অর্ডার করুন
+            </a>
+            <button
+              type="button"
+              onClick={() => setDuplicate(null)}
+              className="mt-2.5 h-12 w-full rounded-full border-2 border-border text-base font-bold text-ink hover:border-brand"
+            >
+              বন্ধ করুন
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

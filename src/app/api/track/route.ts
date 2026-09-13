@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { normalizeBdPhone } from "@/lib/phone-shared";
 
 /** Mask a name for public tracking (first letter + ***, e.g. "আ***"). */
 function maskName(name: string): string {
@@ -14,11 +15,8 @@ function maskName(name: string): string {
  */
 export async function GET(req: NextRequest) {
   try {
-    const phone = (new URL(req.url).searchParams.get("phone") ?? "").replace(
-      /[\s-]/g,
-      ""
-    );
-    if (!/^01[3-9]\d{8}$/.test(phone)) {
+    const phone = normalizeBdPhone(new URL(req.url).searchParams.get("phone"));
+    if (!phone) {
       return NextResponse.json(
         { error: "সঠিক মোবাইল নম্বর দিন। উদাহরণ: 01712345678" },
         { status: 400 }

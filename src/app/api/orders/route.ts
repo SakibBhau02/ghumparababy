@@ -17,6 +17,7 @@ import {
   packageNameForQty,
   priceForQty,
 } from "@/lib/product-shared";
+import { BD_PHONE_EXAMPLE, normalizeBdPhone } from "@/lib/phone-shared";
 
 const COLORS = ["blue", "pink", "red", "beige", "cream", "grey"];
 
@@ -44,10 +45,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const cleanPhone = (phone ?? "").replace(/[\s-]/g, "");
-    if (!/^01[3-9]\d{8}$/.test(cleanPhone)) {
+    const cleanPhone = normalizeBdPhone(phone);
+    if (!cleanPhone) {
       return NextResponse.json(
-        { error: "মোবাইল নম্বরটি সঠিক নয়। উদাহরণ: 01712345678" },
+        { error: `সঠিক বাংলাদেশি মোবাইল নম্বর দিন। উদাহরণ: ${BD_PHONE_EXAMPLE}` },
         { status: 400 }
       );
     }
@@ -136,6 +137,27 @@ export async function POST(req: NextRequest) {
     ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
     const randomPart = Math.random().toString(36).slice(2, 6).toUpperCase();
     const orderCode = `GP-${datePart}-${randomPart}`;
+
+    // 24h duplicate guard (after full validation, right before create):
+    // same number + non-cancelled order in the last 24h → blocked.
+    const recent = await db.order.findFirst({
+      where: {
+        phone: cleanPhone,
+        createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        status: { not: "cancelled" },
+      },
+      select: { orderCode: true },
+    });
+    if (recent) {
+      return NextResponse.json(
+        {
+          error: "duplicate",
+          code: "duplicate",
+          orderCode: recent.orderCode,
+        },
+        { status: 429 }
+      );
+    }
 
     const order = await db.order.create({
       data: {

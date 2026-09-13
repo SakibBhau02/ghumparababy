@@ -16,6 +16,7 @@ import { loadBdGeo } from "@/lib/bd-geo-server";
 import { isValidLocationChain } from "@/lib/bd-geo";
 import { recomputeCustomer } from "@/lib/customers";
 import { PRODUCT_COLORS } from "@/lib/landing-data";
+import { BD_PHONE_EXAMPLE, normalizeBdPhone } from "@/lib/phone-shared";
 
 const COLOR_IDS: string[] = PRODUCT_COLORS.map((c) => c.id);
 
@@ -168,9 +169,9 @@ async function handleOrderEdit(id: string, edit: unknown) {
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
   const name = str(e.name);
   const address = str(e.address);
-  const cleanPhone = str(e.phone).replace(/[\s-]/g, "");
+  const cleanPhone = normalizeBdPhone(str(e.phone));
   if (name.length < 2) return bad("সঠিক নাম দিন।");
-  if (!/^01[3-9]\d{8}$/.test(cleanPhone)) return bad("সঠিক মোবাইল নম্বর দিন।");
+  if (!cleanPhone) return bad(`সঠিক বাংলাদেশি মোবাইল নম্বর দিন। উদাহরণ: ${BD_PHONE_EXAMPLE}`);
   if (address.length < 10) return bad("সম্পূর্ণ ঠিকানা দিন (কমপক্ষে ১০ অক্ষর)।");
 
   const [productConfig, deliveryConfig, locationEnabled] = await Promise.all([
