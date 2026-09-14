@@ -202,9 +202,9 @@ export function sanitizeFraudConfig(raw: unknown): FraudConfig | null {
   };
 }
 
-/** True when at least one data source is configured (merchant login or FraudBD). */
+/** True when at least one data source is configured (merchant login or FraudBD).
+ *  `enabled` only gates auto-check; manual check works whenever creds/key exist. */
 export function isFraudReady(config: FraudConfig): boolean {
-  if (!config.enabled) return false;
   if (Object.keys(config.credentials).length > 0) return true;
-  return config.fraudbdFallback && config.fraudbdApiKey.length > 0;
+  return config.fraudbdApiKey.length > 0;
 }
