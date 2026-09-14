@@ -18,7 +18,7 @@ export function Showcase() {
             পণ্য পরিচিতি
           </span>
           <h2 className="mt-4 text-3xl font-bold text-ink sm:text-4xl">
-            ৬টি প্রিয় কালারে — আপনার বাচ্চার জন্য বেছে নিন
+            ৪টি প্রিয় কালারে — আপনার বাচ্চার জন্য বেছে নিন
           </h2>
           <p className="mt-3 text-base text-muted-foreground sm:text-lg">
             প্রতিটি কালার একই প্রিমিয়াম কোয়ালিটি। ছেলে হোক বা মেয়ে — সবার জন্যই আছে পছন্দের অপশন।
@@ -26,7 +26,7 @@ export function Showcase() {
         </div>
 
         {/* Color gallery */}
-        <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
           {PRODUCT_COLORS.map((color) => (
             <div
               key={color.id}

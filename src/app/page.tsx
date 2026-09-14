@@ -14,7 +14,7 @@ import { FinalCTA, Footer } from "@/components/landing/footer";
 import { StickyCTA } from "@/components/landing/sticky-cta";
 import { WhatsAppFloat } from "@/components/landing/whatsapp-float";
 import { FacebookPixel } from "@/components/landing/facebook-pixel";
-import { GtmScript } from "@/components/landing/gtm-script";
+import { GtmLoader } from "@/components/landing/gtm";
 import { getDeliveryConfig } from "@/lib/delivery";
 import { getProductConfig } from "@/lib/product";
 import { getLocationEnabled } from "@/lib/site-settings";
@@ -22,7 +22,7 @@ import { getPixelConfig } from "@/lib/pixel-config";
 import { getGtmConfig } from "@/lib/gtm-config";
 import type { DeliveryConfig } from "@/lib/delivery-shared";
 import type { ProductConfig } from "@/lib/product-shared";
-import { priceForQty } from "@/lib/product-shared";
+import { allVariantSkus, priceForQty } from "@/lib/product-shared";
 import type { PixelConfig } from "@/lib/pixel-shared";
 import type { GtmConfig } from "@/lib/gtm-shared";
 
@@ -48,16 +48,17 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen overflow-x-clip">
+      {gtmConfig.enabled && gtmConfig.containerId ? (
+        <GtmLoader containerId={gtmConfig.containerId} />
+      ) : null}
       {pixelConfig.enabled && pixelConfig.pixelId ? (
         <FacebookPixel
           pixelId={pixelConfig.pixelId}
           events={pixelConfig.events}
           contentName="ঘুমপাড়া বেবি সোয়াডেল"
           contentValue={singlePrice}
+          contentIds={allVariantSkus(productConfig)}
         />
-      ) : null}
-      {gtmConfig.enabled && gtmConfig.containerId ? (
-        <GtmScript containerId={gtmConfig.containerId} />
       ) : null}
       <Header />
       {/* Emotional journey: Info → Fear → Relief → Proof → Offer → Action */}

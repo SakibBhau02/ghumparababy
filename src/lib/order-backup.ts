@@ -55,6 +55,7 @@ export const CSV_HEADERS = [
   "color",
   "colors",
   "packageName",
+  "sku",
   "quantity",
   "unitPrice",
   "deliveryZone",
@@ -74,8 +75,7 @@ function csvEscape(value: unknown): string {
 }
 
 /** JSON color-id array → joined Bangla labels (for CSV export). */
-export function colorLabels(raw: unknown): string {
-  try {
+export function colorLabels(raw: unknown): string {  try {
     const arr = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
     if (!Array.isArray(arr)) return "";
     return arr
@@ -87,9 +87,32 @@ export function colorLabels(raw: unknown): string {
   }
 }
 
-export function ordersToCsv(orders: BackupOrder[]): string {
+/** JSON color-id array → color id list (legacy single-color field-এ fallback)। */
+export function orderColorIds(o: { colors: string; color: string }): string[] {
+  try {
+    const arr = JSON.parse(o.colors) as unknown;
+    if (Array.isArray(arr) && arr.length > 0) {
+      return arr.filter((c): c is string => typeof c === "string");
+    }
+  } catch {
+    // fall through to legacy color
+  }
+  return [o.color];
+}
+
+export function ordersToCsv(
+  orders: BackupOrder[],
+  /** Optional SKU resolver (live product config থেকে) — না দিলে sku কলাম খালি থাকবে। */
+  getSku?: (o: BackupOrder) => string
+): string {
   const lines = [CSV_HEADERS.join(",")];
   for (const o of orders) {
+    let sku = "";
+    try {
+      sku = getSku ? getSku(o) : "";
+    } catch {
+      sku = "";
+    }
     lines.push(
       [
         o.orderCode,
@@ -102,6 +125,7 @@ export function ordersToCsv(orders: BackupOrder[]): string {
         o.color,
         colorLabels(o.colors),
         o.packageName,
+        sku,
         o.quantity,
         o.unitPrice,
         o.deliveryZone,
@@ -199,9 +223,11 @@ export async function addDeletedId(id: string): Promise<void> {
 }
 
 /** Rewrite both CSV copies from the merged view. Never throws. */
-export async function writeBackups(): Promise<void> {  try {
+export async function writeBackups(
+  getSku?: (o: BackupOrder) => string
+): Promise<void> {  try {
     const orders = await mergedOrders();
-    const csv = ordersToCsv(orders);
+    const csv = ordersToCsv(orders, getSku);
     await fs.mkdir(BACKUP_DIR, { recursive: true });
     await fs.writeFile(BACKUP_CSV, csv, "utf8");
     await fs.writeFile(LATEST_CSV, csv, "utf8");
@@ -215,12 +241,15 @@ export async function writeBackups(): Promise<void> {  try {
  * Designed to be called right after a successful order creation.
  * Never throws — order creation must not fail because of backup.
  */
-export async function appendOrderBackup(order: BackupOrder): Promise<void> {
+export async function appendOrderBackup(
+  order: BackupOrder,
+  getSku?: (o: BackupOrder) => string
+): Promise<void> {
   try {
     await fs.mkdir(BACKUP_DIR, { recursive: true });
     const line = JSON.stringify(order);
     await fs.appendFile(JSONL_PATH, line + "\n", "utf8");
-    await writeBackups();
+    await writeBackups(getSku);
   } catch (e) {
     console.error("order-backup: append failed", e);
   }

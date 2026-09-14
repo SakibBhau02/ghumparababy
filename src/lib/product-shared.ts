@@ -23,6 +23,35 @@ export const DEFAULT_TIERS = [549, 500, 466, 455, 445, 438, 432, 428, 424, 420];
 export type DisplayPackageConfig = {
   id: "single" | "combo2" | "combo3";
   oldPrice: number;
+  /** Variant SKU per color (admin-editable). Key = color id (blue/pink/red/beige). */
+  skus: Record<string, string>;
+};
+
+/** Color ids that carry a variant SKU (mirrors PRODUCT_COLORS ids in landing-data). */
+export const SKU_COLOR_IDS = ["blue", "pink", "red", "beige"] as const;
+
+export type SkuColorId = (typeof SKU_COLOR_IDS)[number];
+
+/** Default variant SKUs per package — used until admin saves a change. */
+export const DEFAULT_SKUS: Record<DisplayPackageConfig["id"], Record<string, string>> = {
+  single: {
+    blue: "GP-SW-S1-BLU",
+    pink: "GP-SW-S1-PNK",
+    red: "GP-SW-S1-RED",
+    beige: "GP-SW-S1-BEG",
+  },
+  combo2: {
+    blue: "GP-SW-C2-BLU",
+    pink: "GP-SW-C2-PNK",
+    red: "GP-SW-C2-RED",
+    beige: "GP-SW-C2-BEG",
+  },
+  combo3: {
+    blue: "GP-SW-F3-BLU",
+    pink: "GP-SW-F3-PNK",
+    red: "GP-SW-F3-RED",
+    beige: "GP-SW-F3-BEG",
+  },
 };
 
 export type ProductConfig = {
@@ -30,6 +59,8 @@ export type ProductConfig = {
   tiers: number[];
   /** Display-only old (strikethrough) prices for the 3 website cards. */
   packages: DisplayPackageConfig[];
+  /** Fixed size for ShopBase / courier (default "F" = Free). */
+  size: string;
 };
 
 /** Fixed display metadata per package (never edited in admin). */
@@ -66,11 +97,70 @@ export const PACKAGE_IDS = ["single", "combo2", "combo3"] as const;
 export const DEFAULT_PRODUCT_CONFIG: ProductConfig = {
   tiers: [...DEFAULT_TIERS],
   packages: [
-    { id: "single", oldPrice: 899 },
-    { id: "combo2", oldPrice: 1798 },
-    { id: "combo3", oldPrice: 2697 },
+    { id: "single", oldPrice: 899, skus: { ...DEFAULT_SKUS.single } },
+    { id: "combo2", oldPrice: 1798, skus: { ...DEFAULT_SKUS.combo2 } },
+    { id: "combo3", oldPrice: 2697, skus: { ...DEFAULT_SKUS.combo3 } },
   ],
+  size: "F",
 };
+
+/** Package id that carries the SKU for a given total quantity (4+ pcs use family SKUs). */
+export function packageIdForQty(qty: number): DisplayPackageConfig["id"] {
+  const q = Math.max(1, Math.round(qty) || 1);
+  if (q === 1) return "single";
+  if (q === 2) return "combo2";
+  return "combo3";
+}
+
+/** Single variant SKU for a package + color (unknown ids fall back to defaults). */
+export function skuForVariant(
+  config: ProductConfig,
+  packageId: string,
+  colorId: string
+): string {
+  const pkg = config.packages.find((p) => p.id === packageId);
+  const fromConfig = pkg?.skus?.[colorId]?.trim();
+  if (fromConfig) return fromConfig;
+  const defaults =
+    DEFAULT_SKUS[packageId as DisplayPackageConfig["id"]] ?? DEFAULT_SKUS.single;
+  return defaults[colorId] ?? defaults.blue;
+}
+
+/**
+ * Order-level SKU list — one entry per distinct color in the order
+ * (mixed-color packs report each variant; same-color packs a single SKU).
+ */
+export function skusForOrder(
+  config: ProductConfig,
+  qty: number,
+  colors: string[]
+): string[] {
+  const pkgId = packageIdForQty(qty);
+  const list = (Array.isArray(colors) && colors.length > 0 ? colors : ["pink"]).map((c) =>
+    skuForVariant(config, pkgId, String(c))
+  );
+  return [...new Set(list)];
+}
+
+/** Human-readable SKU string for invoice / courier / CSV (comma-joined when mixed). */
+export function skuLabelForOrder(
+  config: ProductConfig,
+  qty: number,
+  colors: string[]
+): string {
+  return skusForOrder(config, qty, colors).join(", ");
+}
+
+/** Every variant SKU in the catalog (used for Pixel ViewContent content_ids). */
+export function allVariantSkus(config: ProductConfig): string[] {
+  const out: string[] = [];
+  for (const p of config.packages) {
+    for (const colorId of SKU_COLOR_IDS) {
+      out.push(skuForVariant(config, p.id, colorId));
+    }
+  }
+  return [...new Set(out)];
+}
 
 /** Per-piece + total for a quantity (qty 11+ uses the floor tier). */
 export function priceForQty(
@@ -143,8 +233,30 @@ function migrateLegacy(packages: unknown[]): ProductConfig | null {
     packages: (["single", "combo2", "combo3"] as const).map((id) => ({
       id,
       oldPrice: num(byId.get(id)?.oldPrice, 0),
+      skus: { ...DEFAULT_SKUS[id] },
     })),
+    size: "F",
   };
+}
+
+/** One SKU: uppercase letters/digits/dash/underscore, 1..32 chars. */
+function sanitizeSku(input: unknown, fallback: string): string {
+  const s = String(input ?? "").trim().toUpperCase();
+  if (/^[A-Z0-9][A-Z0-9-_]{0,31}$/.test(s)) return s;
+  return fallback;
+}
+
+/** Variant SKU map for one package — missing/invalid entries fall back to defaults. */
+function sanitizeSkus(
+  input: unknown,
+  packageId: DisplayPackageConfig["id"]
+): Record<string, string> {
+  const src = (input ?? {}) as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const colorId of SKU_COLOR_IDS) {
+    out[colorId] = sanitizeSku(src[colorId], DEFAULT_SKUS[packageId][colorId]);
+  }
+  return out;
 }
 
 /** Sanitize anything coming from DB/admin into a valid ProductConfig. */
@@ -165,9 +277,13 @@ export function sanitizeProductConfig(input: unknown): ProductConfig | null {
       );
       const oldPrice = Math.round(Number((raw as { oldPrice?: unknown } | undefined)?.oldPrice));
       if (!Number.isFinite(oldPrice) || oldPrice < 0 || oldPrice > 999999) return null;
-      pkgs.push({ id, oldPrice });
+      // skus optional (pre-SKU configs) → defaults; present maps are sanitized per variant.
+      pkgs.push({ id, oldPrice, skus: sanitizeSkus((raw as { skus?: unknown } | undefined)?.skus, id) });
     }
-    return { tiers, packages: pkgs };
+    const size = typeof (rec as { size?: unknown }).size === "string" && (rec as { size: string }).size.trim()
+      ? (rec as { size: string }).size.trim()
+      : "F";
+    return { tiers, packages: pkgs, size };
   }
 
   // Legacy shape (pre-tier): migrate admin's 1/2/3-pc prices forward.

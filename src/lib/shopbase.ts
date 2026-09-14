@@ -44,8 +44,8 @@ export type SbOrderInput = {
   district: string;
   shippingAddress: string;
   orderNote: string;
-  /** One entry per distinct color: { sku, qty, price-per-piece }. */
-  items: { sku: string; qty: number; price: number }[];
+  /** One entry per distinct color: { sku, qty, price-per-piece, size }. */
+  items: { sku: string; qty: number; price: number; size?: string }[];
 };
 
 export type SbResult =
@@ -61,14 +61,15 @@ export function buildItemsFromColors(
   config: ShopbaseConfig,
   colors: string[],
   perPiecePrice: number
-): { sku: string; qty: number; price: number }[] {
+): { sku: string; qty: number; price: number; size: string }[] {
   const counts = new Map<string, number>();
   for (const c of colors) counts.set(c, (counts.get(c) ?? 0) + 1);
-  const items: { sku: string; qty: number; price: number }[] = [];
+  const items: { sku: string; qty: number; price: number; size: string }[] = [];
   for (const [color, qty] of counts) {
     const sku = config.skus[color] ?? DEFAULT_SKUS[color];
     if (!sku) continue;
-    items.push({ sku, qty, price: perPiecePrice });
+    // Free-size product — ShopBase requires checkout_items[].size ("F" = Free).
+    items.push({ sku, qty, price: perPiecePrice, size: "F" });
   }
   return items;
 }
@@ -106,6 +107,8 @@ export async function placeShopbaseOrder(
             sku: it.sku,
             qty: it.qty,
             price: it.price,
+            // Required by ShopBase; default "F" (Free size) when unset.
+            size: it.size ?? "F",
           })),
         }),
         signal: controller.signal,

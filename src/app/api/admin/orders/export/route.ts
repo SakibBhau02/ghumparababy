@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { isAdminRequest } from "@/lib/admin-auth";
-import { mergedOrders, ordersToCsv } from "@/lib/order-backup";
+import { mergedOrders, orderColorIds, ordersToCsv } from "@/lib/order-backup";
+import { getProductConfig } from "@/lib/product";
+import { skuLabelForOrder } from "@/lib/product-shared";
 
 /**
  * GET /api/admin/orders/export — download every order as CSV.
@@ -16,8 +18,13 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const orders = await mergedOrders();
-  const csv = ordersToCsv(orders);
+  const [orders, productConfig] = await Promise.all([
+    mergedOrders(),
+    getProductConfig(),
+  ]);
+  const csv = ordersToCsv(orders, (o) =>
+    skuLabelForOrder(productConfig, o.quantity, orderColorIds(o))
+  );
 
   const now = new Date();
   const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(

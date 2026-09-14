@@ -12,10 +12,10 @@ export const WHATSAPP_LINK = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIC
 )}`;
 
 export const PRODUCT_COLORS = [
-  { id: "blue", label: "আকাশি", hex: "#6B8EDE", image: siteImage("/images/swaddle-blue.jpg") },
-  { id: "red", label: "লাল", hex: "#8B1E2A", image: siteImage("/images/swaddle-red.jpg") },
-  { id: "brown", label: "বাদামি", hex: "#B5883D", image: siteImage("/images/swaddle-brown.jpg") },
+  { id: "blue", label: "আকাশি", hex: "#8FAFD4", image: siteImage("/images/swaddle-blue.jpg") },
   { id: "pink", label: "গোলাপি", hex: "#F2B8C2", image: siteImage("/images/swaddle-pink.jpg") },
+  { id: "red", label: "লাল", hex: "#A93B32", image: siteImage("/images/swaddle-red.jpg") },
+  { id: "beige", label: "বেইজ", hex: "#C4A06A", image: siteImage("/images/swaddle-beige.jpg") },
 ] as const;
 
 export function toBn(num: number): string {

@@ -4,6 +4,8 @@ import { isAdminRequest } from "@/lib/admin-auth";
 import { createConsignment, getSteadfastConfig } from "@/lib/steadfast";
 import { isSteadfastReady } from "@/lib/steadfast-shared";
 import { getDeliveryConfig } from "@/lib/delivery";
+import { getProductConfig } from "@/lib/product";
+import { skuLabelForOrder } from "@/lib/product-shared";
 import { PRODUCT_COLORS } from "@/lib/landing-data";
 
 /**
@@ -43,9 +45,7 @@ export async function POST(req: NextRequest) {
 
     const deliveryConfig = await getDeliveryConfig();
     const zoneLabel =
-      deliveryConfig.zones.find((z) => z.id === order.deliveryZone)?.label ?? "";
-
-    let colors: string[] = [];
+      deliveryConfig.zones.find((z) => z.id === order.deliveryZone)?.label ?? "";    let colors: string[] = [];
     try {
       const parsed = JSON.parse(order.colors) as unknown;
       if (Array.isArray(parsed)) {
@@ -62,6 +62,9 @@ export async function POST(req: NextRequest) {
       .filter((s) => s && s.trim().length > 0)
       .join(", ");
 
+    const productConfig = await getProductConfig();
+    const sku = skuLabelForOrder(productConfig, order.quantity, colors);
+
     const result = await createConsignment(config, {
       invoice: order.orderCode,
       recipientName: order.name,
@@ -69,7 +72,7 @@ export async function POST(req: NextRequest) {
       recipientAddress: address,
       codAmount: order.totalPrice,
       note: zoneLabel,
-      itemDescription: `${order.packageName} (${colorLabels.join(", ")})`,
+      itemDescription: `${order.packageName} (${colorLabels.join(", ")})${sku ? ` [SKU: ${sku}]` : ""}`,
     });
 
     if (!result.ok) {

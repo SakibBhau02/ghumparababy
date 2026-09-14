@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { PRODUCT_COLORS, toBn, HOTLINE, HOTLINE_LINK, WHATSAPP_NUMBER } from "@/lib/landing-data";
+import { PRODUCT_COLORS, toBn, HOTLINE, HOTLINE_LINK, WHATSAPP_NUMBER, WHATSAPP_DISPLAY } from "@/lib/landing-data";
 import { BD_PHONE_EXAMPLE, normalizeBdPhone } from "@/lib/phone-shared";
 import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import {
@@ -16,12 +16,12 @@ import {
   isFreeShipping,
   packageNameForQty,
   priceForQty,
+  skusForOrder,
   type ProductConfig,
 } from "@/lib/product-shared";
 import type { LocationSelection } from "@/lib/bd-geo";
 import { AddressCascade } from "@/components/landing/address-cascade";
 import { pixelTrack } from "@/lib/pixel";
-import { pushViewItem, pushPurchase } from "@/lib/gtm-data-layer";
 import { CheckCircle2, Loader2, Phone, ShieldCheck, Truck, ShoppingBag } from "lucide-react";
 
 export function OrderForm({
@@ -75,15 +75,6 @@ export function OrderForm({
   const freeShip = isFreeShipping(qty);
   const firstColor = PRODUCT_COLORS.find((c) => c.id === colors[0]) ?? PRODUCT_COLORS[1];
 
-  // GTM: view_item on mount
-  useEffect(() => {
-    pushViewItem({
-      item_id: "ghumparababy-swaddle",
-      item_name: "ঘুমপাড়া বেবি সোয়াডেল",
-      price: pkgTotal,
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Keep exactly one color slot per item when quantity changes.
   // New slots copy the FIRST chosen color (not a fixed default) — most
   // buyers want matching pieces, so the machine does it for them (Tesler).
@@ -110,11 +101,24 @@ export function OrderForm({
       value: (price ?? pkgTotal) + currentCharge,
       currency: "BDT",
       content_name: "ঘুমপাড়া বেবি সোয়াডেল",
+      content_ids: skusForOrder(productConfig, qty, colors),
     });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Double-click guard: ignore re-submits while a request is in flight.
+    if (loading) return;
+    // Frontend BD-format gate: wrong number → no submit, clear Bangla message.
+    if (!normalizeBdPhone(phone)) {
+      toast({
+        title: "সঠিক মোবাইল নম্বর দিন",
+        description: `বাংলাদেশি ১১ ডিজিট নম্বর হতে হবে (যেমন: ${BD_PHONE_EXAMPLE})। 880 / +880 দিয়ে শুরু করলেও চলবে।`,
+        variant: "destructive",
+      });
+      document.getElementById("phone")?.focus();
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/orders", {
@@ -149,21 +153,9 @@ export function OrderForm({
         value: data.totalPrice,
         currency: "BDT",
         content_name: "ঘুমপাড়া বেবি সোয়াডেল",
+        content_ids: skusForOrder(productConfig, qty, colors),
         order_id: data.orderCode,
       }, data.orderCode);
-      // GTM: purchase event
-      pushPurchase({
-        transaction_id: data.orderCode,
-        value: data.totalPrice,
-        items: [
-          {
-            item_id: "ghumparababy-swaddle",
-            item_name: "ঘুমপাড়া বেবি সোয়াডেল",
-            price: perPiece,
-            quantity: qty,
-          },
-        ],
-      });
       toast({
         title: "🎉 অর্ডার সফল হয়েছে!",
         description: "আমাদের প্রতিনিধি শীঘ্রই কল করে কনফার্ম করবেন।",
@@ -386,7 +378,7 @@ export function OrderForm({
                               {toBn(i + 1)} নম্বর পিস
                             </div>
                           )}
-                          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-6">
+                          <div className="grid grid-cols-4 gap-2.5">
                             {PRODUCT_COLORS.map((c) => (
                               <button
                                 key={c.id}
@@ -607,9 +599,12 @@ export function OrderForm({
               </p>
             ) : null}
             <p className="mt-3 rounded-2xl bg-cream p-4 text-sm leading-relaxed text-ink">
-              ভুলে দুবার চাপ পড়ে গেছে মনে হচ্ছে। আবার অর্ডার করতে হলে{" "}
-              <b>২৪ ঘণ্টা</b> অপেক্ষা করুন — আমাদের প্রতিনিধি এর মধ্যেই কল করে
-              কনফার্ম করবেন।
+              আপনি একবার অর্ডার করেছেন — ভুলে দুবার চাপ পড়ে গেছে মনে হচ্ছে।
+              আবার অর্ডার করতে হলে <b>২৪ ঘণ্টা</b> অপেক্ষা করুন — আমাদের
+              প্রতিনিধি এর মধ্যেই কল করে কনফার্ম করবেন।
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              WhatsApp-এ অর্ডার করতে চাইলে আমাদের WhatsApp নম্বরে ({WHATSAPP_DISPLAY}) যোগাযোগ করুন।
             </p>
             <a
               href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(

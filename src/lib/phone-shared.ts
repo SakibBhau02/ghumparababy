@@ -11,10 +11,15 @@
 /** Fold any input to canonical 01XXXXXXXXX, or null when invalid. */
 export function normalizeBdPhone(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
-  let digits = raw.replace(/[\s\-().]/g, "");
+  // Convert Bengali (০-৯) + Arabic-Indic (٠-٩) digits to ASCII first —
+  // many customers type their number in Bengali digits.
+  const ascii = raw
+    .replace(/[০-৯]/g, (d) => String("০১২৩৪৫৬৭৮৯".indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+  let digits = ascii.replace(/[\s\-().]/g, "");
   if (digits.startsWith("+")) digits = digits.slice(1);
   if (digits.startsWith("00880")) {
-    digits = "01" + digits.slice(5);
+    digits = "0" + digits.slice(5);
   } else if (digits.startsWith("880")) {
     digits = "0" + digits.slice(3);
   }

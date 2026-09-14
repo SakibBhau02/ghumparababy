@@ -23,11 +23,14 @@ export function FacebookPixel({
   events,
   contentName,
   contentValue,
+  contentIds,
 }: {
   pixelId: string;
   events: PixelEvents;
   contentName: string;
   contentValue: number;
+  /** Variant SKUs — ViewContent-এর content_ids-এ যায় (admin থেকে edit হয়)। */
+  contentIds: string[];
 }) {
   if (!pixelId) return null;
 
@@ -35,6 +38,7 @@ export function FacebookPixel({
   const viewContentData = JSON.stringify({
     content_name: contentName,
     content_type: "product",
+    content_ids: contentIds,
     value: contentValue,
     currency: "BDT",
   });

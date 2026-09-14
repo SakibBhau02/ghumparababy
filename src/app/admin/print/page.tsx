@@ -5,6 +5,8 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { ADMIN_COOKIE, verifyToken } from "@/lib/admin-auth";
 import { getDeliveryConfig } from "@/lib/delivery";
+import { getProductConfig } from "@/lib/product";
+import { skuLabelForOrder } from "@/lib/product-shared";
 import { PRODUCT_COLORS, toBn, HOTLINE } from "@/lib/landing-data";
 import { siteImage } from "@/lib/site-images";
 import { PrintButton } from "@/components/admin/print-button";
@@ -57,11 +59,13 @@ function Invoice({
   zoneLabel,
   zoneNote,
   compact,
+  sku,
 }: {
   order: Order;
   zoneLabel: string;
   zoneNote: string;
   compact: boolean;
+  sku: string;
 }) {
   const colors = colorIds(order);
   const loc = locationLine(order);
@@ -150,6 +154,11 @@ function Invoice({
                 </span>
                 <span>
                   <span className="font-bold text-ink">{order.packageName}</span>
+                  {sku ? (
+                    <span className="mt-0.5 block font-mono text-[11px] font-bold text-muted-foreground">
+                      SKU: {sku}
+                    </span>
+                  ) : null}
                   <span className="mt-0.5 block font-semibold text-ink">
                     কালার ({toBn(colors.length)}টি):
                   </span>
@@ -225,9 +234,10 @@ export default async function PrintPage({
     redirect("/admin");
   }
 
-  const [orders, deliveryConfig] = await Promise.all([
+  const [orders, deliveryConfig, productConfig] = await Promise.all([
     db.order.findMany({ where: { id: { in: ids } } }),
     getDeliveryConfig(),
+    getProductConfig(),
   ]);
   const byId = new Map(orders.map((o) => [o.id, o]));
   const list = ids
@@ -299,7 +309,7 @@ export default async function PrintPage({
       >
         {list.map((o) => (
           <div key={o.id} className={per === 6 ? "invoice-6up" : per === 4 ? "invoice-4up" : "invoice-2up"}>
-            <Invoice order={o} zoneLabel={zoneName(o.deliveryZone)} zoneNote={zoneNote(o.deliveryZone)} compact={per !== 2} />
+            <Invoice order={o} zoneLabel={zoneName(o.deliveryZone)} zoneNote={zoneNote(o.deliveryZone)} compact={per !== 2} sku={skuLabelForOrder(productConfig, o.quantity, colorIds(o))} />
           </div>
         ))}
       </div>

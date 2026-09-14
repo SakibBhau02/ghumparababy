@@ -23,9 +23,12 @@ export async function sendPurchaseCapi(
     phone: string;
     clientIp: string;
     userAgent: string;
+    /** Variant SKUs in this order (goes to content_ids + contents). */
+    skus?: string[];
   }
 ): Promise<CapiResult> {
   try {
+    const skus = [...new Set((order.skus ?? []).filter(Boolean))];
     const payload: Record<string, unknown> = {
       data: [
         {
@@ -41,6 +44,13 @@ export async function sendPurchaseCapi(
           custom_data: {
             value: order.totalPrice,
             currency: "BDT",
+            ...(skus.length > 0
+              ? {
+                  content_ids: skus,
+                  content_type: "product",
+                  contents: skus.map((id) => ({ id, quantity: 1 })),
+                }
+              : {}),
           },
         },
       ],
