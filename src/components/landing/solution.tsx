@@ -70,7 +70,7 @@ export function Solution({
           <div className="relative mx-auto w-full max-w-md lg:col-span-2">
             <div className="relative aspect-[4/5] overflow-hidden rounded-[2.5rem] border-8 border-white shadow-2xl shadow-brand/20">
               <Image
-                src={siteImage("/images/swaddle-beige.jpg")}
+                src={siteImage("/images/swaddle-brown.jpg")}
                 alt="ঘুমপাড়া সোয়াডেলে মোড়া শান্ত ঘুমন্ত শিশু"
                 fill
                 className="object-cover"

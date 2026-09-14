@@ -23,12 +23,12 @@ export const DEFAULT_TIERS = [549, 500, 466, 455, 445, 438, 432, 428, 424, 420];
 export type DisplayPackageConfig = {
   id: "single" | "combo2" | "combo3";
   oldPrice: number;
-  /** Variant SKU per color (admin-editable). Key = color id (blue/pink/red/beige). */
+  /** Variant SKU per color (admin-editable). Key = color id (blue/pink/red/brown). */
   skus: Record<string, string>;
 };
 
 /** Color ids that carry a variant SKU (mirrors PRODUCT_COLORS ids in landing-data). */
-export const SKU_COLOR_IDS = ["blue", "pink", "red", "beige"] as const;
+export const SKU_COLOR_IDS = ["blue", "pink", "red", "brown"] as const;
 
 export type SkuColorId = (typeof SKU_COLOR_IDS)[number];
 
@@ -38,19 +38,19 @@ export const DEFAULT_SKUS: Record<DisplayPackageConfig["id"], Record<string, str
     blue: "GP-SW-S1-BLU",
     pink: "GP-SW-S1-PNK",
     red: "GP-SW-S1-RED",
-    beige: "GP-SW-S1-BEG",
+    brown: "GP-SW-S1-BRN",
   },
   combo2: {
     blue: "GP-SW-C2-BLU",
     pink: "GP-SW-C2-PNK",
     red: "GP-SW-C2-RED",
-    beige: "GP-SW-C2-BEG",
+    brown: "GP-SW-C2-BRN",
   },
   combo3: {
     blue: "GP-SW-F3-BLU",
     pink: "GP-SW-F3-PNK",
     red: "GP-SW-F3-RED",
-    beige: "GP-SW-F3-BEG",
+    brown: "GP-SW-F3-BRN",
   },
 };
 
