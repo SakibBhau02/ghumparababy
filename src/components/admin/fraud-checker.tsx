@@ -261,6 +261,18 @@ export function FraudChecker({ initialConfig }: { initialConfig: FraudConfig }) 
                 onCheckedChange={(v) => setConfig((c) => ({ ...c, fraudbdSandbox: v }))}
               />
             </div>
+            <Button
+              onClick={save}
+              disabled={saving}
+              className="rounded-full bg-brand font-bold text-white hover:bg-brand-deep disabled:opacity-60"
+            >
+              {saving ? (
+                <Loader2 className="mr-1.5 size-4 animate-spin" />
+              ) : (
+                <Save className="mr-1.5 size-4" />
+              )}
+              সেভ করুন
+            </Button>
           </div>
         </div>
       </section>
