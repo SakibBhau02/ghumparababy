@@ -14,30 +14,35 @@ import { FinalCTA, Footer } from "@/components/landing/footer";
 import { StickyCTA } from "@/components/landing/sticky-cta";
 import { WhatsAppFloat } from "@/components/landing/whatsapp-float";
 import { FacebookPixel } from "@/components/landing/facebook-pixel";
+import { GtmScript } from "@/components/landing/gtm-script";
 import { getDeliveryConfig } from "@/lib/delivery";
 import { getProductConfig } from "@/lib/product";
 import { getLocationEnabled } from "@/lib/site-settings";
 import { getPixelConfig } from "@/lib/pixel-config";
+import { getGtmConfig } from "@/lib/gtm-config";
 import type { DeliveryConfig } from "@/lib/delivery-shared";
 import type { ProductConfig } from "@/lib/product-shared";
 import { priceForQty } from "@/lib/product-shared";
 import type { PixelConfig } from "@/lib/pixel-shared";
+import type { GtmConfig } from "@/lib/gtm-shared";
 
 // Static with 60s revalidation (ISR): Vercel serves cached HTML so traffic
 // spikes never hammer Neon — admin price/setting changes appear within a minute.
 export const revalidate = 60;
 
 export default async function Home() {
-  const [deliveryConfig, pixelConfig, productConfig, locationEnabled]: [
+  const [deliveryConfig, pixelConfig, productConfig, locationEnabled, gtmConfig]: [
     DeliveryConfig,
     PixelConfig,
     ProductConfig,
     boolean,
+    GtmConfig,
   ] = await Promise.all([
     getDeliveryConfig(),
     getPixelConfig(),
     getProductConfig(),
     getLocationEnabled(),
+    getGtmConfig(),
   ]);
   const singlePrice = priceForQty(productConfig, 1).total;
 
@@ -50,6 +55,9 @@ export default async function Home() {
           contentName="ঘুমপাড়া বেবি সোয়াডেল"
           contentValue={singlePrice}
         />
+      ) : null}
+      {gtmConfig.enabled && gtmConfig.containerId ? (
+        <GtmScript containerId={gtmConfig.containerId} />
       ) : null}
       <Header />
       {/* Emotional journey: Info → Fear → Relief → Proof → Offer → Action */}

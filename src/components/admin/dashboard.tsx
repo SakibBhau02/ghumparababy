@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,8 +28,12 @@ import { type TelegramConfig } from "@/lib/telegram-shared";
 import { type SteadfastConfig } from "@/lib/steadfast-shared";
 import { type ShopbaseConfig } from "@/lib/shopbase-shared";
 import { type ManyDialConfig } from "@/lib/manydial-shared";
+import { type FraudConfig, type FraudCheckResult, riskLevel } from "@/lib/fraud-shared";
+import { codStats, SEGMENTS, segmentOf, type SegmentId } from "@/lib/customer-segments";
 import { ShopbaseSetup } from "@/components/admin/shopbase-setup";
 import { ManyDialSetup } from "@/components/admin/manydial-setup";
+import { FraudChecker } from "@/components/admin/fraud-checker";
+import { FraudBadge } from "@/components/admin/fraud-badge";
 import { Switch } from "@/components/ui/switch";
 import {
   Tabs,
@@ -101,6 +106,10 @@ type CustomerLike = {
   division: string;
   district: string;
   upazila: string;
+  email: string;
+  tags: string;
+  note: string;
+  blacklisted: boolean;
   orderCount: number;
   totalSpent: number;
   firstOrderAt: string | Date;
@@ -217,6 +226,7 @@ export function AdminDashboard({
   steadfast: initialSteadfast,
   shopbase: initialShopbase,
   manydial: initialManyDial,
+  fraud: initialFraud,
   customers: initialCustomers,
 }: {
   initialOrders: OrderLike[];
@@ -228,12 +238,13 @@ export function AdminDashboard({
   steadfast: SteadfastConfig;
   shopbase: ShopbaseConfig;
   manydial: ManyDialConfig;
+  fraud: FraudConfig;
   customers: CustomerLike[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [orders, setOrders] = useState<OrderLike[]>(initialOrders);
-  const [customers] = useState<CustomerLike[]>(initialCustomers);
+  const [customers, setCustomers] = useState<CustomerLike[]>(initialCustomers);
   const [config, setConfig] = useState<DeliveryConfig>(initialConfig);
   const [chargeInputs, setChargeInputs] = useState<Record<string, string>>(() =>
     Object.fromEntries(initialConfig.zones.map((z) => [z.id, String(z.charge)]))
@@ -289,7 +300,43 @@ export function AdminDashboard({
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [custQuery, setCustQuery] = useState("");
+  const [custSegFilter, setCustSegFilter] = useState<SegmentId | "all">("all");
+  const [custSort, setCustSort] = useState<"recent" | "spent">("recent");
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
+  const [fraudMap, setFraudMap] = useState<Record<string, FraudCheckResult>>({});
+  const fraudMapRef = useRef<Set<string>>(new Set());
+
+  // Auto fraud badges: when enabled, bulk-check the newest order phones once
+  // (12h server cache makes repeat visits free; max 20 phones per sweep).
+  useEffect(() => {
+    if (!initialFraud?.enabled || !initialFraud?.autoCheck) return;
+    const phones = Array.from(
+      new Set(
+        orders
+          .slice(0, 40)
+          .map((o) => o.phone)
+          .filter((p) => /^01[3-9]\d{8}$/.test(p ?? ""))
+      )
+    ).filter((p) => !fraudMapRef.current.has(p));
+    if (phones.length === 0) return;
+    const batch = phones.slice(0, 20);
+    batch.forEach((p) => fraudMapRef.current.add(p));
+    fetch("/api/admin/fraud", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phones: batch }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.results && typeof data.results === "object") {
+          setFraudMap((cur) => ({ ...cur, ...(data.results as Record<string, FraudCheckResult>) }));
+        }
+      })
+      .catch(() => {
+        // badges stay hidden — manual check still available
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders]);
 
   const stats = useMemo(() => {
     const active = orders.filter((o) => o.status !== "cancelled");
@@ -373,9 +420,28 @@ export function AdminDashboard({
 
   const filteredCustomers = useMemo(() => {
     const q = custQuery.trim();
-    if (!q) return customers;
-    return customers.filter((c) => c.name.includes(q) || c.phone.includes(q));
-  }, [customers, custQuery]);
+    let list = customers;
+    if (q) {
+      list = list.filter((c) => c.name.includes(q) || c.phone.includes(q));
+    }
+    if (custSegFilter !== "all") {
+      list = list.filter((c) => segmentOf(c) === custSegFilter);
+    }
+    return [...list].sort((a, b) =>
+      custSort === "spent"
+        ? b.totalSpent - a.totalSpent
+        : new Date(b.lastOrderAt).getTime() - new Date(a.lastOrderAt).getTime()
+    );
+  }, [customers, custQuery, custSegFilter, custSort]);
+
+  const segmentCounts = useMemo(() => {
+    const counts = new Map<SegmentId, number>();
+    for (const c of customers) {
+      const s = segmentOf(c);
+      counts.set(s, (counts.get(s) ?? 0) + 1);
+    }
+    return counts;
+  }, [customers]);
 
   const toggleSelectOne = (id: string) => {
     setSelectedIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
@@ -411,13 +477,20 @@ export function AdminDashboard({
   const refresh = async () => {
     setRefreshing(true);
     try {
-      const res = await fetch("/api/admin/orders", { cache: "no-store" });
+      const [res, custRes] = await Promise.all([
+        fetch("/api/admin/orders", { cache: "no-store" }),
+        fetch("/api/admin/customers", { cache: "no-store" }),
+      ]);
       if (res.status === 401) {
         router.replace("/admin/login");
         return;
       }
       const data = await res.json();
       setOrders(data.orders);
+      if (custRes.ok) {
+        const custData = await custRes.json();
+        setCustomers(custData.customers);
+      }
       toast({ title: "তালিকা রিফ্রেশ হয়েছে" });
     } catch {
       toast({ title: "রিফ্রেশ ব্যর্থ", variant: "destructive" });
@@ -1526,6 +1599,31 @@ export function AdminDashboard({
             <Activity className="mr-1.5 size-4" /> খুলুন
           </Button>
         </div>
+
+        {/* GTM setup link */}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2">
+            <Activity className="size-5 text-green-600" />
+            <div>
+              <h2 className="font-bold text-ink">Google Tag Manager সেটআপ</h2>
+              <p className="text-xs text-muted-foreground">
+                Container ID ও dataLayer ইভেন্ট চালু/বন্ধ করুন।
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => router.push("/admin/gtm")}
+            className="rounded-full font-bold"
+          >
+            <Activity className="mr-1.5 size-4 text-green-600" /> খুলুন
+          </Button>
+        </div>
+
+        {/* Fraud Checker setup */}
+        <div className="mt-6">
+          <FraudChecker initialConfig={initialFraud} />
+        </div>
         </TabsContent>
         <TabsContent value="customers">
           <div className="mt-6 rounded-2xl border border-border bg-white p-5 shadow-sm">
@@ -1533,13 +1631,47 @@ export function AdminDashboard({
               <h2 className="flex items-center gap-2 font-bold text-ink">
                 <Users className="size-5 text-brand" /> কাস্টমার ({toBn(customers.length)})
               </h2>
-              <input
-                value={custQuery}
-                onChange={(e) => setCustQuery(e.target.value)}
-                placeholder="নাম বা মোবাইল দিয়ে খুঁজুন…"
-                className="h-10 rounded-full border border-border bg-cream/50 px-4 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={custSort}
+                  onChange={(e) => setCustSort(e.target.value === "spent" ? "spent" : "recent")}
+                  className="h-10 rounded-full border border-border bg-white px-3 text-sm font-semibold text-ink outline-none focus:border-brand"
+                >
+                  <option value="recent">সাম্প্রতিক আগে</option>
+                  <option value="spent">সর্বোচ্চ খরচ আগে</option>
+                </select>
+                <input
+                  value={custQuery}
+                  onChange={(e) => setCustQuery(e.target.value)}
+                  placeholder="নাম বা মোবাইল দিয়ে খুঁজুন…"
+                  className="h-10 rounded-full border border-border bg-cream/50 px-4 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                />
+              </div>
             </div>
+
+            {/* Segment chips — click to filter */}
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {(["all", ...(Object.keys(SEGMENTS) as SegmentId[]).sort(
+                (a, b) => SEGMENTS[a].order - SEGMENTS[b].order
+              )] as (SegmentId | "all")[]).map((s) => {
+                const on = custSegFilter === s;
+                const count = s === "all" ? customers.length : segmentCounts.get(s) ?? 0;
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setCustSegFilter(s)}
+                    className={`rounded-full border px-3 py-1 text-xs font-bold transition-colors ${
+                      on
+                        ? "border-brand bg-brand text-white"
+                        : "border-border bg-white text-muted-foreground hover:border-brand/40"
+                    }`}
+                  >
+                    {s === "all" ? "সব" : SEGMENTS[s].label} ({toBn(count)})
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="mt-3 space-y-2">
               {filteredCustomers.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -1547,8 +1679,10 @@ export function AdminDashboard({
                 </div>
               ) : (
                 filteredCustomers.map((c) => {
+                  const seg = SEGMENTS[segmentOf(c)];
                   const cOrders = orders.filter((o) => o.phone === c.phone);
-                  const loc = [c.division, c.district, c.upazila].filter(Boolean).join(", ");
+                  const cod = codStats(cOrders);
+                  const low = cod.rate !== null && cod.rate < 60;
                   return (
                     <div key={c.phone} className="overflow-hidden rounded-xl border border-border">
                       <button
@@ -1556,7 +1690,12 @@ export function AdminDashboard({
                         className="flex w-full flex-wrap items-center justify-between gap-2 p-3.5 text-left transition-colors hover:bg-cream/50"
                       >
                         <div className="min-w-0">
-                          <div className="font-bold text-ink">{c.name || "(নাম নেই)"}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-ink">{c.name || "(নাম নেই)"}</span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${seg.badge}`}>
+                              {seg.label}
+                            </span>
+                          </div>
                           <div className="text-sm text-muted-foreground">{c.phone}</div>
                         </div>
                         <div className="text-right text-sm">
@@ -1564,12 +1703,23 @@ export function AdminDashboard({
                           <span className="block text-xs text-muted-foreground">
                             মোট ৳{toBn(c.totalSpent)}
                           </span>
+                          {cod.rate !== null && (
+                            <span
+                              className={`block text-xs font-semibold ${low ? "text-red-600" : "text-emerald-700"}`}
+                            >
+                              সফলতা {toBn(cod.rate)}%
+                            </span>
+                          )}
                         </div>
                       </button>
                       {expandedPhone === c.phone && (
                         <div className="border-t border-border bg-cream/40 p-3.5 text-sm">
                           <p className="text-muted-foreground">{c.address}</p>
-                          {loc && <p className="mt-0.5 font-medium text-ink">📍 {loc}</p>}
+                          {[c.division, c.district, c.upazila].filter(Boolean).length > 0 && (
+                            <p className="mt-0.5 font-medium text-ink">
+                              📍 {[c.division, c.district, c.upazila].filter(Boolean).join(", ")}
+                            </p>
+                          )}
                           <p className="mt-1 text-xs text-muted-foreground">
                             প্রথম অর্ডার: {formatDate(c.firstOrderAt)} • শেষ: {formatDate(c.lastOrderAt)}
                           </p>
@@ -1596,6 +1746,12 @@ export function AdminDashboard({
                               ))
                             )}
                           </div>
+                          <Link
+                            href={`/admin/customer/${encodeURIComponent(c.phone)}`}
+                            className="mt-3 inline-block rounded-full bg-brand px-4 py-1.5 text-xs font-bold text-white hover:bg-brand-deep"
+                          >
+                            পূর্ণ প্রোফাইল দেখুন →
+                          </Link>
                         </div>
                       )}
                     </div>
@@ -1683,10 +1839,16 @@ export function AdminDashboard({
           ) : (
             visibleOrders.map((o) => {
               const meta = STATUS_META[o.status] ?? STATUS_META.pending;
+              const fraud = fraudMap[o.phone];
+              const fraudRisk = fraud
+                ? riskLevel(fraud.aggregated.successRatio, fraud.aggregated.total)
+                : null;
               return (
                 <div
                   key={o.id}
-                  className="rounded-2xl border border-border bg-white p-4 shadow-sm sm:p-5"
+                  className={`rounded-2xl border bg-white p-4 shadow-sm sm:p-5 ${
+                    fraudRisk === "high" ? "border-red-300 ring-1 ring-red-200" : "border-border"
+                  }`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1743,7 +1905,22 @@ export function AdminDashboard({
                           {o.pinned ? "পিনড" : "পিন"}
                         </button>
                       </div>
-                      <div className="mt-2 font-bold text-ink">{o.name}</div>
+                      <Link
+                        href={`/admin/customer/${encodeURIComponent(o.phone)}#fraud`}
+                        title="কাস্টমার প্রোফাইল দেখুন"
+                        className="mt-2 inline-flex items-center gap-1 font-bold text-ink hover:text-brand hover:underline"
+                      >
+                        {o.name} <Users className="size-3.5 text-muted-foreground" />
+                      </Link>
+                      {fraud && (
+                        <Link
+                          href={`/admin/customer/${encodeURIComponent(o.phone)}#fraud`}
+                          title="Fraud history দেখুন"
+                          className="ml-2 inline-flex align-middle"
+                        >
+                          <FraudBadge result={fraud} compact />
+                        </Link>
+                      )}
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                         <a
                           href={`tel:+88${o.phone}`}

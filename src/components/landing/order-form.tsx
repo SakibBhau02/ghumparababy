@@ -21,6 +21,7 @@ import {
 import type { LocationSelection } from "@/lib/bd-geo";
 import { AddressCascade } from "@/components/landing/address-cascade";
 import { pixelTrack } from "@/lib/pixel";
+import { pushViewItem, pushPurchase } from "@/lib/gtm-data-layer";
 import { CheckCircle2, Loader2, Phone, ShieldCheck, Truck, ShoppingBag } from "lucide-react";
 
 export function OrderForm({
@@ -73,6 +74,15 @@ export function OrderForm({
   const pkgName = packageNameForQty(qty);
   const freeShip = isFreeShipping(qty);
   const firstColor = PRODUCT_COLORS.find((c) => c.id === colors[0]) ?? PRODUCT_COLORS[1];
+
+  // GTM: view_item on mount
+  useEffect(() => {
+    pushViewItem({
+      item_id: "ghumparababy-swaddle",
+      item_name: "ঘুমপাড়া বেবি সোয়াডেল",
+      price: pkgTotal,
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep exactly one color slot per item when quantity changes.
   // New slots copy the FIRST chosen color (not a fixed default) — most
@@ -141,6 +151,19 @@ export function OrderForm({
         content_name: "ঘুমপাড়া বেবি সোয়াডেল",
         order_id: data.orderCode,
       }, data.orderCode);
+      // GTM: purchase event
+      pushPurchase({
+        transaction_id: data.orderCode,
+        value: data.totalPrice,
+        items: [
+          {
+            item_id: "ghumparababy-swaddle",
+            item_name: "ঘুমপাড়া বেবি সোয়াডেল",
+            price: perPiece,
+            quantity: qty,
+          },
+        ],
+      });
       toast({
         title: "🎉 অর্ডার সফল হয়েছে!",
         description: "আমাদের প্রতিনিধি শীঘ্রই কল করে কনফার্ম করবেন।",

@@ -10,6 +10,7 @@ import { getTelegramConfig } from "@/lib/telegram";
 import { getSteadfastConfig } from "@/lib/steadfast";
 import { getShopbaseConfig } from "@/lib/shopbase";
 import { getManyDialConfig } from "@/lib/manydial";
+import { getFraudConfig } from "@/lib/courier-fraud";
 import { AdminDashboard } from "@/components/admin/dashboard";
 import type { Order } from "@prisma/client";
 
@@ -28,7 +29,7 @@ export default async function AdminPage() {
   }
 
   try {
-    const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp, telegram, steadfast, shopbase, manydial, customers] =
+    const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp, telegram, steadfast, shopbase, manydial, fraud, customers] =
       await Promise.all([
         db.order.findMany({ orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] }),
         getDeliveryConfig(),
@@ -39,6 +40,7 @@ export default async function AdminPage() {
         getSteadfastConfig(),
         getShopbaseConfig(),
         getManyDialConfig(),
+        getFraudConfig(),
         db.customer.findMany({ orderBy: { lastOrderAt: "desc" } }),
       ]);
 
@@ -53,6 +55,7 @@ export default async function AdminPage() {
         steadfast={steadfast}
         shopbase={shopbase}
         manydial={manydial}
+        fraud={fraud}
         customers={customers}
       />
     );

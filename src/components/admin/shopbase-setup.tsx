@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { BookOpen, RefreshCw, ShoppingBag } from "lucide-react";
+import { BookOpen, RefreshCw, Save, ShoppingBag } from "lucide-react";
 import {
   DEFAULT_SKUS,
   type ShopbaseConfig,
@@ -20,6 +20,7 @@ export function ShopbaseSetup({ initial }: { initial: ShopbaseConfig }) {
   const { toast } = useToast();
   const [inputs, setInputs] = useState<ShopbaseConfig>(initial);
   const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [showGuide, setShowGuide] = useState(true);
   const [isTestToken, setIsTestToken] = useState(
     initial.token === "123456" || initial.token === ""
@@ -79,6 +80,32 @@ export function ShopbaseSetup({ initial }: { initial: ShopbaseConfig }) {
     } catch {
       setInputs(prev);
       toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
+    }
+  };
+
+  const saveSkus = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shopbase: inputs }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "সেভ হয়নি",
+          description: data.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setInputs(data.shopbase);
+      toast({ title: "SKU সেভ হয়েছে ✓" });
+    } catch {
+      toast({ title: "সেভ ব্যর্থ", variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -207,7 +234,22 @@ export function ShopbaseSetup({ initial }: { initial: ShopbaseConfig }) {
           </p>
         </div>
         <div className="rounded-xl border border-border bg-cream/50 p-3.5">
-          <label className="text-sm font-semibold text-ink">কালার-ভাগ SKU *</label>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="text-sm font-semibold text-ink">কালার-ভাগ SKU *</label>
+            <Button
+              onClick={saveSkus}
+              disabled={saving}
+              size="sm"
+              className="rounded-full bg-indigo-600 font-bold text-white hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {saving ? (
+                <RefreshCw className="mr-1 size-3.5 animate-spin" />
+              ) : (
+                <Save className="mr-1 size-3.5" />
+              )}
+              সেভ করুন
+            </Button>
+          </div>
           <div className="mt-1.5 grid grid-cols-2 gap-2">
             {PRODUCT_COLORS.map((c) => (
               <div key={c.id} className="flex items-center gap-1.5">

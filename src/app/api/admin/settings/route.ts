@@ -35,6 +35,11 @@ import {
   sanitizeManyDialConfig,
   type ManyDialConfig,
 } from "@/lib/manydial-shared";
+import { getFraudConfig, saveFraudConfig } from "@/lib/courier-fraud";
+import {
+  sanitizeFraudConfig,
+  type FraudConfig,
+} from "@/lib/fraud-shared";
 import { isAdminRequest } from "@/lib/admin-auth";
 
 const MAX_CHARGE = 999;
@@ -44,7 +49,7 @@ export async function GET(req: NextRequest) {
   if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "অনুমতি নেই।" }, { status: 401 });
   }
-  const [config, products, locationEnabled, whatsapp, telegram, steadfast, shopbase, manydial] = await Promise.all([
+  const [config, products, locationEnabled, whatsapp, telegram, steadfast, shopbase, manydial, fraud] = await Promise.all([
     getDeliveryConfig(),
     getProductConfig(),
     getLocationEnabled(),
@@ -53,6 +58,7 @@ export async function GET(req: NextRequest) {
     getSteadfastConfig(),
     getShopbaseConfig(),
     getManyDialConfig(),
+    getFraudConfig(),
   ]);
   return NextResponse.json({
     config,
@@ -63,6 +69,7 @@ export async function GET(req: NextRequest) {
     steadfast,
     shopbase,
     manydial,
+    fraud,
   });
 }
 
@@ -88,6 +95,7 @@ export async function PUT(req: NextRequest) {
       steadfast?: unknown;
       shopbase?: unknown;
       manydial?: unknown;
+      fraud?: unknown;
     };
     const result: {
       config?: DeliveryConfig;
@@ -98,6 +106,7 @@ export async function PUT(req: NextRequest) {
       steadfast?: SteadfastConfig;
       shopbase?: ShopbaseConfig;
       manydial?: ManyDialConfig;
+      fraud?: FraudConfig;
     } = {};
 
     if (body.charges !== undefined || body.notes !== undefined) {
@@ -208,6 +217,18 @@ export async function PUT(req: NextRequest) {
       }
       const saved = await saveManyDialConfig(sane);
       result.manydial = saved;
+    }
+
+    if (body.fraud !== undefined) {
+      const sane = sanitizeFraudConfig(body.fraud);
+      if (!sane) {
+        return NextResponse.json(
+          { error: "Fraud checker সেটিংস সঠিক নয়।" },
+          { status: 400 }
+        );
+      }
+      await saveFraudConfig(sane);
+      result.fraud = sane;
     }
 
     if (Object.keys(result).length === 0) {

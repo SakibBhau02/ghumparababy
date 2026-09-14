@@ -25,7 +25,8 @@ import {
   priceForQty,
 } from "@/lib/product-shared";
 import { BD_PHONE_EXAMPLE, normalizeBdPhone } from "@/lib/phone-shared";
-import { PRODUCT_COLORS } from "@/lib/landing-data";
+import { PRODUCT_COLORS, HOTLINE } from "@/lib/landing-data";
+import { getFraudConfig, warmFraudCache } from "@/lib/courier-fraud";
 
 // Server-side color whitelist — always in sync with the landing palette.
 const COLORS: string[] = PRODUCT_COLORS.map((c) => c.id);
@@ -60,6 +61,22 @@ export async function POST(req: NextRequest) {
         { error: `সঠিক বাংলাদেশি মোবাইল নম্বর দিন। উদাহরণ: ${BD_PHONE_EXAMPLE}` },
         { status: 400 }
       );
+    }
+
+    // Blacklisted phone (admin-flagged) — no new orders, hotline shown.
+    try {
+      const flagged = await db.customer.findUnique({
+        where: { phone: cleanPhone },
+        select: { blacklisted: true },
+      });
+      if (flagged?.blacklisted) {
+        return NextResponse.json(
+          { error: `এই নম্বর থেকে এখন অনলাইনে অর্ডার নেওয়া যাচ্ছে না। সমস্যা হলে কল করুন ${HOTLINE}।` },
+          { status: 403 }
+        );
+      }
+    } catch {
+      // lookup failure must never block an order
     }
 
     if (!address || address.trim().length < 10) {
@@ -220,6 +237,18 @@ export async function POST(req: NextRequest) {
 
     // Durable backup (append-only ledger + CSV copies) — never blocks the order
     await appendOrderBackup(order);
+
+    // Fraud auto-check warmup (best-effort background — never blocks the order).
+    // Result lands in the 12h fraud cache, so the admin dashboard order badges
+    // and customer profile show it instantly without waiting on courier logins.
+    try {
+      const fraudConfig = await getFraudConfig();
+      if (fraudConfig.enabled && fraudConfig.autoCheck) {
+        warmFraudCache(fraudConfig, cleanPhone);
+      }
+    } catch {
+      // warmup failure must never block an order
+    }
 
     // Meta Conversions API: server-side Purchase (never blocks the order).
     // event_id = orderCode dedupes against the browser pixel event.
