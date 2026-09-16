@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // Standalone output is for self-hosted/Docker only. On Vercel it breaks
+  // the build (Next 16.3 nft.json regression in onBuildComplete) — Vercel
+  // packages the output itself, so leave the default there.
+  // Vercel always sets VERCEL=1 during builds.
+  ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
   /* config options here */
   typescript: {
     ignoreBuildErrors: true,
