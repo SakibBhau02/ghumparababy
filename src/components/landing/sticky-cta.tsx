@@ -39,18 +39,18 @@ export function StickyCTA({
       }`}
       style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
     >
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-        <div className="leading-tight">
-          <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-ink">৳{toBn(singlePrice)}</span>
-            <span className="text-sm text-muted-foreground line-through">৳{toBn(899)}</span>
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 sm:gap-3">
+        <div className="min-w-0 leading-tight">
+          <div className="flex items-baseline gap-1.5 sm:gap-2">
+            <span className="whitespace-nowrap text-base font-bold text-ink sm:text-lg">৳{toBn(singlePrice)}</span>
+            <span className="whitespace-nowrap text-xs text-muted-foreground line-through sm:text-sm">৳{toBn(899)}</span>
           </div>
-          <div className="text-xs text-leaf font-medium">✓ ক্যাশ অন ডেলিভারি • {deliveryBadgeText(deliveryConfig)}</div>
+          <div className="truncate text-[11px] font-medium text-leaf sm:text-xs">✓ ক্যাশ অন ডেলিভারি • {deliveryBadgeText(deliveryConfig)}</div>
         </div>
-        <a href="#order">
+        <a href="#order" className="shrink-0">
           <Button
             size="lg"
-            className="animate-gentle-pulse rounded-full bg-brand px-8 font-bold text-white shadow-lg hover:bg-brand-deep"
+            className="animate-gentle-pulse whitespace-nowrap rounded-full bg-brand px-5 text-sm font-bold text-white shadow-lg hover:bg-brand-deep sm:px-8 sm:text-base"
           >
             এখনই অর্ডার করুন
           </Button>

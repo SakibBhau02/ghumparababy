@@ -129,7 +129,7 @@ export function Hero({
           </div>
 
           {/* floating cards */}
-          <div className="animate-float-soft absolute left-4 top-6 rounded-2xl bg-white p-3 shadow-xl">
+          <div className="animate-float-soft absolute left-3 top-4 rounded-2xl bg-white p-2.5 shadow-xl sm:left-4 sm:top-6 sm:p-3">
             <div className="flex items-center gap-2">
               <span className="text-2xl" aria-hidden="true">😴</span>
               <div>
@@ -138,7 +138,7 @@ export function Hero({
               </div>
             </div>
           </div>
-          <div className="animate-float-soft absolute bottom-10 right-4 rounded-2xl bg-white p-3 shadow-xl" style={{ animationDelay: "1.2s" }}>
+          <div className="animate-float-soft absolute bottom-8 right-3 rounded-2xl bg-white p-2.5 shadow-xl sm:bottom-10 sm:right-4 sm:p-3" style={{ animationDelay: "1.2s" }}>
             <div className="flex items-center gap-2">
               <span className="text-2xl" aria-hidden="true">🛡️</span>
               <div>

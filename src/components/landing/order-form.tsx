@@ -316,7 +316,7 @@ export function OrderForm({
         {success ? (
           <div
             id="order-success"
-            className="mx-auto mt-10 max-w-xl rounded-[2rem] border-2 border-leaf/40 bg-white p-8 text-center shadow-xl"
+            className="mx-auto mt-10 max-w-xl rounded-3xl border-2 border-leaf/40 bg-white p-5 text-center shadow-xl sm:rounded-[2rem] sm:p-8"
           >
             <CheckCircle2 className="mx-auto size-16 text-leaf" />
             <h3 className="mt-4 text-2xl font-bold text-ink">অর্ডার নিশ্চিত হয়েছে! 🎉</h3>
@@ -342,7 +342,7 @@ export function OrderForm({
             </div>
           </div>
         ) : (
-          <div className="group mx-auto mt-10 overflow-hidden rounded-[2rem] border border-border bg-white shadow-xl shadow-brand/10">
+          <div className="group mx-auto mt-10 overflow-hidden rounded-3xl border border-border bg-white shadow-xl shadow-brand/10 sm:rounded-[2rem]">
             <div className="grid lg:grid-cols-5">
               {/* Left: selected product preview — hover zoom */}
               <div className="relative hidden lg:col-span-2 lg:block">
@@ -379,7 +379,7 @@ export function OrderForm({
               </div>
 
               {/* Right: form */}
-              <div className="p-6 sm:p-8 lg:col-span-3">
+              <div className="p-4 sm:p-8 lg:col-span-3">
                 {/* Mobile product summary (lg:hidden) — mobile-first CRO */}
                 <div className="mb-5 flex items-center gap-3 rounded-2xl border border-border bg-cream/60 p-3 lg:hidden">
                   <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-border">
@@ -398,7 +398,7 @@ export function OrderForm({
                       {totalSave > 0 ? ` • ৳${toBn(totalSave)} সাশ্রয়` : ""}
                     </div>
                   </div>
-                  <div className="shrink-0 text-lg font-bold text-brand">৳{toBn(grandTotal)}</div>
+                  <div className="shrink-0 whitespace-nowrap text-lg font-bold text-brand">৳{toBn(grandTotal)}</div>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-5">
@@ -414,7 +414,7 @@ export function OrderForm({
                       💡 {progressLine}
                     </p>
                     {/* Combo strip — live tier prices, tap to quick-set flagship qty */}
-                    <div className="mt-2.5 grid grid-cols-3 gap-2">
+                    <div className="mt-2.5 grid grid-cols-3 gap-1.5 sm:gap-2">
                       {comboCards.map((c) => {
                         const active = c.n === 3 ? allPieces >= 3 : allPieces === c.n;
                         return (
@@ -424,28 +424,28 @@ export function OrderForm({
                             onClick={() => quickSet(c.n)}
                             aria-pressed={active}
                             aria-label={`${toBn(c.n)}টি${c.n === 3 ? "+" : ""} — মোট ৳${toBn(c.total)}`}
-                            className={`rounded-2xl border-2 p-2 text-center transition-all ${
+                            className={`rounded-2xl border-2 p-1.5 text-center transition-all sm:p-2 ${
                               active
                                 ? "border-brand bg-brand-soft/70 shadow-md shadow-brand/20"
                                 : "border-border bg-white hover:border-honey/60"
                             }`}
                           >
-                            <div className="text-sm font-bold text-ink">
+                            <div className="text-[13px] font-bold leading-tight text-ink sm:text-sm">
                               {toBn(c.n)}টি{c.n === 3 ? "+" : ""}
                             </div>
-                            <div className="text-sm font-bold text-brand">
+                            <div className="whitespace-nowrap text-[13px] font-bold leading-tight text-brand sm:text-sm">
                               ৳{toBn(c.perPiece)}/পিস
                             </div>
-                            <div className="text-[11px] text-muted-foreground">
+                            <div className="whitespace-nowrap text-[10px] leading-tight text-muted-foreground sm:text-[11px]">
                               মোট ৳{toBn(c.total)}
                             </div>
                             {c.save > 0 ? (
-                              <div className="mx-auto mt-1 w-fit rounded-full bg-leaf/15 px-2 py-0.5 text-[10px] font-bold text-leaf">
+                              <div className="mx-auto mt-1 w-fit whitespace-nowrap rounded-full bg-leaf/15 px-1.5 py-0.5 text-[10px] font-bold leading-tight text-leaf sm:px-2">
                                 ৳{toBn(c.save)} ছাড়
                               </div>
                             ) : null}
                             {c.free ? (
-                              <div className="mx-auto mt-1 w-fit rounded-full bg-brand px-2 py-0.5 text-[10px] font-bold text-white">
+                              <div className="mx-auto mt-1 w-fit whitespace-nowrap rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-bold leading-tight text-white sm:px-2">
                                 ফ্রি ডেলিভারি
                               </div>
                             ) : null}
@@ -465,9 +465,9 @@ export function OrderForm({
                         return (
                           <div
                             key={key}
-                            className="flex items-center gap-3 rounded-2xl border border-border bg-white p-2.5"
+                            className="flex items-center gap-2.5 rounded-2xl border border-border bg-white p-2 sm:gap-3 sm:p-2.5"
                           >
-                            <div className="relative size-16 shrink-0 overflow-hidden rounded-xl">
+                            <div className="relative size-14 shrink-0 overflow-hidden rounded-xl sm:size-16">
                               <Image
                                 src={l.image}
                                 alt={`${l.name} (${l.variantLabel})`}
@@ -482,7 +482,7 @@ export function OrderForm({
                               ) : null}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-bold text-ink">
+                              <div className="line-clamp-2 break-words text-sm font-bold leading-snug text-ink">
                                 {l.name} ({l.variantLabel}){" "}
                                 {l.featured ? (
                                   <span className="ml-1 rounded-full bg-honey px-2 py-0.5 text-[10px] font-bold text-ink">
@@ -503,7 +503,7 @@ export function OrderForm({
                                 </div>
                               ) : null}
                             </div>
-                            <div className="flex shrink-0 items-center gap-1.5">
+                            <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
                               <button
                                 type="button"
                                 aria-label={`${l.variantLabel} কমান`}
@@ -512,7 +512,7 @@ export function OrderForm({
                                   fireInitiate();
                                 }}
                                 disabled={nq <= 0}
-                                className="grid size-9 place-items-center rounded-full border-2 border-border text-lg font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
+                                className="grid size-9 shrink-0 touch-manipulation place-items-center rounded-full border-2 border-border text-lg font-bold text-ink transition-all hover:border-brand active:scale-95 disabled:opacity-30"
                               >
                                 −
                               </button>
@@ -527,7 +527,7 @@ export function OrderForm({
                                   fireInitiate();
                                 }}
                                 disabled={nq >= cap}
-                                className="grid size-9 place-items-center rounded-full border-2 border-border text-lg font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
+                                className="grid size-9 shrink-0 touch-manipulation place-items-center rounded-full border-2 border-border text-lg font-bold text-ink transition-all hover:border-brand active:scale-95 disabled:opacity-30"
                               >
                                 +
                               </button>
@@ -629,15 +629,15 @@ export function OrderForm({
                               fireInitiate();
                             }}
                             aria-pressed={zone === z.id}
-                            className={`flex items-center justify-between rounded-2xl border-2 p-3.5 text-left transition-all ${
+                            className={`flex items-center justify-between gap-3 rounded-2xl border-2 p-3.5 text-left transition-all ${
                               zone === z.id
                                 ? "border-brand bg-brand-soft/60"
                                 : "border-border hover:border-honey/50"
                             }`}
                           >
-                            <span className="text-sm font-bold text-ink">{z.label}</span>
+                            <span className="min-w-0 flex-1 break-words text-sm font-bold text-ink">{z.label}</span>
                             <span
-                              className={`text-sm font-bold ${z.charge > 0 && !freeShip ? "text-brand" : "text-leaf"}`}
+                              className={`shrink-0 whitespace-nowrap text-sm font-bold ${z.charge > 0 && !freeShip ? "text-brand" : "text-leaf"}`}
                             >
                               {z.charge > 0 && !freeShip ? `৳${toBn(z.charge)}` : "ফ্রি"}
                             </span>
@@ -656,46 +656,46 @@ export function OrderForm({
                   )}
 
                   {/* Summary */}
-                  <div className="rounded-2xl bg-cream p-4">
+                  <div className="rounded-2xl bg-cream p-3.5 sm:p-4">
                     {qty > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">
+                      <div className="flex justify-between gap-3 text-sm">
+                        <span className="min-w-0 flex-1 break-words text-muted-foreground">
                           {pkgName} ({mainLabels.join(", ")}
                           {qty > 1 ? ` +${toBn(qty - 1)}` : ""}) — ৳{toBn(perPiece)}/পিস
                         </span>
-                        <span className="font-semibold text-ink">৳{toBn(pkgTotal)}</span>
+                        <span className="shrink-0 whitespace-nowrap font-semibold text-ink">৳{toBn(pkgTotal)}</span>
                       </div>
                     )}
                     {newLines.map((l) => (
-                      <div key={lineKey(l.line)} className="mt-1 flex justify-between text-sm">
-                        <span className="text-muted-foreground">
+                      <div key={lineKey(l.line)} className="mt-1 flex justify-between gap-3 text-sm">
+                        <span className="min-w-0 flex-1 break-words text-muted-foreground">
                           {l.line.name} ({l.line.variantLabel}) ×{toBn(l.qty)}
                         </span>
-                        <span className="font-semibold text-ink">৳{toBn(perPiece * l.qty)}</span>
+                        <span className="shrink-0 whitespace-nowrap font-semibold text-ink">৳{toBn(perPiece * l.qty)}</span>
                       </div>
                     ))}
-                    <div className="mt-1 flex justify-between text-sm">
+                    <div className="mt-1 flex justify-between gap-3 text-sm">
                       <span className="text-muted-foreground">ডেলিভারি চার্জ</span>
-                      <span className={`font-semibold ${currentCharge > 0 ? "text-ink" : "text-leaf"}`}>
+                      <span className={`shrink-0 whitespace-nowrap font-semibold ${currentCharge > 0 ? "text-ink" : "text-leaf"}`}>
                         {currentCharge > 0 ? `৳${toBn(currentCharge)}` : "ফ্রি! 🎉"}
                       </span>
                     </div>
                     {totalSave > 0 ? (
-                      <div className="mt-1 flex justify-between text-sm">
+                      <div className="mt-1 flex justify-between gap-3 text-sm">
                         <span className="font-bold text-leaf">🎉 মোট সাশ্রয়</span>
-                        <span className="font-bold text-leaf">৳{toBn(totalSave)}</span>
+                        <span className="shrink-0 whitespace-nowrap font-bold text-leaf">৳{toBn(totalSave)}</span>
                       </div>
                     ) : null}
-                    <div className="mt-2 flex justify-between border-t border-border pt-2 text-base">
+                    <div className="mt-2 flex justify-between gap-3 border-t border-border pt-2 text-base">
                       <span className="font-bold text-ink">সর্বমোট</span>
-                      <span className="font-bold text-brand">৳{toBn(grandTotal)}</span>
+                      <span className="shrink-0 whitespace-nowrap font-bold text-brand">৳{toBn(grandTotal)}</span>
                     </div>
                   </div>
 
                   <Button
                     type="submit"
                     disabled={loading}
-                    className="h-14 w-full rounded-full bg-brand text-lg font-bold text-white shadow-xl shadow-brand/30 hover:bg-brand-deep disabled:opacity-60"
+                    className="h-auto min-h-14 w-full rounded-full bg-brand px-4 py-3.5 text-center text-base font-bold leading-snug text-white shadow-xl shadow-brand/30 hover:bg-brand-deep disabled:opacity-60 sm:text-lg"
                   >
                     {loading ? (
                       <>
@@ -734,7 +734,7 @@ export function OrderForm({
           onClick={() => setDuplicate(null)}
         >
           <div
-            className="w-full max-w-md rounded-[2rem] bg-white p-7 text-center shadow-2xl"
+            className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 text-center shadow-2xl sm:rounded-[2rem] sm:p-7"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-5xl">⏳</div>
@@ -760,7 +760,7 @@ export function OrderForm({
               )}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 flex h-13 w-full items-center justify-center gap-2 rounded-full bg-[#128C4B] py-3.5 text-base font-bold text-white hover:opacity-90"
+              className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-[#128C4B] px-4 py-3.5 text-center text-base font-bold leading-snug text-white hover:opacity-90"
             >
               WhatsApp-এ অর্ডার করুন
             </a>

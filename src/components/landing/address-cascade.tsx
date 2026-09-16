@@ -105,7 +105,7 @@ export function AddressCascade({
               ))}
             </select>
           </div>
-          <div>
+          <div className="sm:col-span-2">
             <Label htmlFor="upazila" className="text-sm text-muted-foreground">
               উপজেলা / থানা *
             </Label>
