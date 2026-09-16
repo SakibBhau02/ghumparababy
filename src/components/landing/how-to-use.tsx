@@ -20,7 +20,8 @@ const STEPS = [
   },
 ];
 
-export function HowToUse() {
+export function HowToUse({ howToUseImage }: { howToUseImage?: string }) {
+  const img = howToUseImage || siteImage("/images/swaddle-pink.jpg");
   return (
     <section className="py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4">
@@ -37,7 +38,7 @@ export function HowToUse() {
           <div className="relative order-2 mx-auto w-full max-w-sm lg:order-1">
             <div className="relative aspect-square overflow-hidden rounded-[2.5rem] border-8 border-white shadow-2xl shadow-brand/20">
               <Image
-                src={siteImage("/images/swaddle-pink.jpg")}
+                src={img}
                 alt="সোয়াডেল ব্যবহারের নিয়ম দেখানো হচ্ছে"
                 fill
                 className="object-cover"

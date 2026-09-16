@@ -57,6 +57,8 @@ export type TgOrder = {
   deliveryZoneLabel: string;
   deliveryCharge: number;
   totalPrice: number;
+  /** New-collection lines summary (mixed orders only) — appended as its own line. */
+  itemsText?: string;
 };
 
 export type TgResult = { ok: true } | { ok: false; error: string };
@@ -96,6 +98,7 @@ async function loadPhotoBytes(id: string): Promise<Buffer | null> {
 
 /** "গোলাপি ×২, লাল ×১" + total piece count. */
 function colorsSummary(colors: string[]): string {
+  if (colors.length === 0) return "—";
   const counts = new Map<string, number>();
   for (const c of colors) counts.set(c, (counts.get(c) ?? 0) + 1);
   const parts = [...counts.entries()].map(([id, n]) =>
@@ -123,6 +126,7 @@ export function buildOrderCaption(o: TgOrder, sample = false): string {
     "",
     `📦 প্যাকেজ: ${o.packageName}`,
     `🎨 কালার: ${colorsSummary(o.colors)}`,
+    ...(o.itemsText ? [`🛍️ এক্সট্রা প্রোডাক্ট: ${o.itemsText}`] : []),
     `💰 প্রতি পিস: ৳${toBn(o.unitPrice)}`,
     o.deliveryCharge > 0
       ? `🚚 ডেলিভারি: ${o.deliveryZoneLabel} (৳${toBn(o.deliveryCharge)})`

@@ -5,7 +5,11 @@ import { createConsignment, getSteadfastConfig } from "@/lib/steadfast";
 import { isSteadfastReady } from "@/lib/steadfast-shared";
 import { getDeliveryConfig } from "@/lib/delivery";
 import { getProductConfig } from "@/lib/product";
-import { skuLabelForOrder } from "@/lib/product-shared";
+import {
+  orderItemsLabel,
+  parseOrderItems,
+  skuLabelForMixed,
+} from "@/lib/catalog-shared";
 import { PRODUCT_COLORS } from "@/lib/landing-data";
 
 /**
@@ -63,7 +67,12 @@ export async function POST(req: NextRequest) {
       .join(", ");
 
     const productConfig = await getProductConfig();
-    const sku = skuLabelForOrder(productConfig, order.quantity, colors);
+    const lines = parseOrderItems(order.items);
+    const sku = skuLabelForMixed(productConfig, order.quantity, colors, order.items);
+    const itemDescription =
+      lines.length > 0
+        ? `${orderItemsLabel(lines)}${sku ? ` [SKU: ${sku}]` : ""}`
+        : `${order.packageName} (${colorLabels.join(", ")})${sku ? ` [SKU: ${sku}]` : ""}`;
 
     const result = await createConsignment(config, {
       invoice: order.orderCode,
@@ -72,7 +81,7 @@ export async function POST(req: NextRequest) {
       recipientAddress: address,
       codAmount: order.totalPrice,
       note: zoneLabel,
-      itemDescription: `${order.packageName} (${colorLabels.join(", ")})${sku ? ` [SKU: ${sku}]` : ""}`,
+      itemDescription,
     });
 
     if (!result.ok) {

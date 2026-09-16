@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { isAdminRequest } from "@/lib/admin-auth";
 import { mergedOrders, orderColorIds, ordersToCsv } from "@/lib/order-backup";
 import { getProductConfig } from "@/lib/product";
-import { skuLabelForOrder } from "@/lib/product-shared";
+import { skuLabelForMixed } from "@/lib/catalog-shared";
 
 /**
  * GET /api/admin/orders/export — download every order as CSV.
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     getProductConfig(),
   ]);
   const csv = ordersToCsv(orders, (o) =>
-    skuLabelForOrder(productConfig, o.quantity, orderColorIds(o))
+    skuLabelForMixed(productConfig, o.quantity, orderColorIds(o), o.items)
   );
 
   const now = new Date();

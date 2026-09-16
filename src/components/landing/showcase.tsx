@@ -1,5 +1,7 @@
 import Image from "next/image";
-import { toBn, PRODUCT_COLORS } from "@/lib/landing-data";
+import { toBn } from "@/lib/landing-data";
+import type { ProductConfig } from "@/lib/product-shared";
+import type { CatalogItem } from "@/lib/catalog-shared";
 import { Ruler, Layers, Sparkles, ShieldCheck } from "lucide-react";
 
 const SPECS = [
@@ -9,7 +11,28 @@ const SPECS = [
   { icon: ShieldCheck, title: "সেফটি", desc: "হুড ছাড়া মোড়ানো যায় — বাচ্চার মুখমণ্ডল খোলা থাকে" },
 ];
 
-export function Showcase() {
+export function Showcase({
+  productConfig,
+  mainProduct,
+}: {
+  productConfig: ProductConfig;
+  mainProduct: CatalogItem | null;
+}) {
+  // Single source: main product's variants (product page). Falls back to the
+  // admin color list so the section never goes blank.
+  const live = (mainProduct?.variants ?? []).filter((v) => v.active);
+  const colors =
+    live.length > 0
+      ? live.map((v) => ({
+          id: v.id,
+          label: v.label || v.name,
+          hex: v.colorHex,
+          image: v.imageUrl || mainProduct?.imageUrl || "",
+        }))
+      : productConfig.colors && productConfig.colors.length > 0
+        ? productConfig.colors
+        : [];
+  if (colors.length === 0) return null;
   return (
     <section className="bg-secondary/40 py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4">
@@ -18,7 +41,7 @@ export function Showcase() {
             পণ্য পরিচিতি
           </span>
           <h2 className="mt-4 text-3xl font-bold text-ink sm:text-4xl">
-            ৪টি প্রিয় কালারে — আপনার বাচ্চার জন্য বেছে নিন
+            {toBn(colors.length)}টি প্রিয় কালারে — আপনার বাচ্চার জন্য বেছে নিন
           </h2>
           <p className="mt-3 text-base text-muted-foreground sm:text-lg">
             প্রতিটি কালার একই প্রিমিয়াম কোয়ালিটি। ছেলে হোক বা মেয়ে — সবার জন্যই আছে পছন্দের অপশন।
@@ -27,7 +50,7 @@ export function Showcase() {
 
         {/* Color gallery */}
         <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {PRODUCT_COLORS.map((color) => (
+          {colors.map((color) => (
             <div
               key={color.id}
               className="group overflow-hidden rounded-3xl bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl"

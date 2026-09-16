@@ -37,7 +37,10 @@ const FILES = [
   ["public/images/swaddle-blue.jpg", "images/swaddle-blue.jpg", "image/jpeg"],
   ["public/images/swaddle-pink.jpg", "images/swaddle-pink.jpg", "image/jpeg"],
   ["public/images/swaddle-red.jpg", "images/swaddle-red.jpg", "image/jpeg"],
-  ["public/images/swaddle-beige.jpg", "images/swaddle-beige.jpg", "image/jpeg"],
+  ["public/images/swaddle-brown.jpg", "images/swaddle-brown.jpg", "image/jpeg"],
+  ["public/images/hooded-swaddle-brown.jpg", "images/hooded-swaddle-brown.jpg", "image/jpeg"],
+  ["public/images/hooded-swaddle-pink.jpg", "images/hooded-swaddle-pink.jpg", "image/jpeg"],
+  ["public/images/hooded-swaddle-blue.jpg", "images/hooded-swaddle-blue.jpg", "image/jpeg"],
   ["public/logo.svg", "logo.svg", "image/svg+xml"],
 ];
 

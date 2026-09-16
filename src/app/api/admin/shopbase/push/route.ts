@@ -3,9 +3,11 @@ import { db } from "@/lib/db";
 import { isAdminRequest } from "@/lib/admin-auth";
 import {
   buildItemsFromColors,
+  buildItemsFromLines,
   getShopbaseConfig,
   placeShopbaseOrder,
 } from "@/lib/shopbase";
+import { orderItemsLabel, parseOrderItems } from "@/lib/catalog-shared";
 import { isShopbaseReady } from "@/lib/shopbase-shared";
 import { getDeliveryConfig } from "@/lib/delivery";
 import { PRODUCT_COLORS } from "@/lib/landing-data";
@@ -55,7 +57,21 @@ export async function POST(req: NextRequest) {
     }
     if (colors.length === 0) colors = [order.color];
 
-    const items = buildItemsFromColors(config, colors, order.unitPrice);
+    const lines = parseOrderItems(order.items);
+    // Mixed orders: per-line SKUs (new collection) + color-mapped legacy lines.
+    // Pre-items orders: legacy color aggregation (unchanged behavior).
+    const items =
+      lines.length > 0
+        ? buildItemsFromLines(
+            config,
+            lines.map((l) => ({
+              shopbaseSku: l.shopbaseSku,
+              qty: l.qty,
+              price: l.unitPrice,
+              colorIds: l.colorIds,
+            }))
+          )
+        : buildItemsFromColors(config, colors, order.unitPrice);
     if (items.length === 0) {
       return NextResponse.json(
         { error: "এই অর্ডারের কালারের SKU পাওয়া যায়নি — SKU সেটিংস দেখুন।" },
@@ -74,13 +90,16 @@ export async function POST(req: NextRequest) {
       .filter((s) => s && s.trim().length > 0)
       .join(", ");
 
+    const colorPart = colorLabels.length > 0 ? ` (${colorLabels})` : "";
+    const itemsPart = lines.length > 0 ? ` • ${orderItemsLabel(lines)}` : "";
+
     const result = await placeShopbaseOrder(config, {
       invoiceId: order.orderCode,
       customerName: order.name,
       phone: order.phone,
       district: order.district || order.division || "Dhaka",
       shippingAddress: address,
-      orderNote: `${order.packageName} (${colorLabels})${zoneLabel ? ` • ${zoneLabel}` : ""}${
+      orderNote: `${order.packageName}${colorPart}${itemsPart}${zoneLabel ? ` • ${zoneLabel}` : ""}${
         order.adminNote ? ` • ${order.adminNote.slice(0, 80)}` : ""
       }`,
       items,

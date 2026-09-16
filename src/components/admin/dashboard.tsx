@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
+import { parseOrderItems } from "@/lib/catalog-shared";
 import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import {
   DEFAULT_TIERS,
@@ -42,6 +43,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { OrderEditModal } from "@/components/admin/order-edit-modal";
+import { SettingsGroup } from "@/components/admin/settings-group";
 import {
   Activity,
   BadgeCheck,
@@ -49,6 +51,7 @@ import {
   Clock,
   Copy,
   Download,
+  ImageIcon,
   MapPin,
   MessageCircle,
   Package,
@@ -70,6 +73,7 @@ import {
   Save,
   Send,
   Settings2,
+  Store,
 } from "lucide-react";
 
 type OrderLike = {
@@ -96,6 +100,8 @@ type OrderLike = {
   trackingCode: string;
   shopbaseOrderId: string;
   adminNote: string;
+  /** Mixed-cart lines JSON ("[]" on legacy orders). May be absent pre-migration. */
+  items?: string;
   createdAt: string | Date;
 };
 
@@ -228,6 +234,7 @@ export function AdminDashboard({
   manydial: initialManyDial,
   fraud: initialFraud,
   customers: initialCustomers,
+  initialTab,
 }: {
   initialOrders: OrderLike[];
   deliveryConfig: DeliveryConfig;
@@ -240,9 +247,13 @@ export function AdminDashboard({
   manydial: ManyDialConfig;
   fraud: FraudConfig;
   customers: CustomerLike[];
+  initialTab?: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const [tab, setTab] = useState(
+    initialTab === "settings" || initialTab === "customers" ? initialTab : "orders"
+  );
   const [orders, setOrders] = useState<OrderLike[]>(initialOrders);
   const [customers, setCustomers] = useState<CustomerLike[]>(initialCustomers);
   const [config, setConfig] = useState<DeliveryConfig>(initialConfig);
@@ -549,6 +560,7 @@ export function AdminDashboard({
             packages: products.packages.map((p) => ({
               id: p.id,
               oldPrice: Number(oldInputs[p.id]),
+              skus: p.skus,
             })),
           },
         }),
@@ -884,7 +896,7 @@ export function AdminDashboard({
       </header>
 
       <div className="mx-auto max-w-6xl px-4">
-        <Tabs defaultValue="orders">
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="mt-6 grid w-full max-w-lg grid-cols-3 rounded-full bg-white p-1 shadow-sm">
             <TabsTrigger
               value="orders"
@@ -948,6 +960,12 @@ export function AdminDashboard({
 
         </TabsContent>
         <TabsContent value="settings">
+        <SettingsGroup
+          icon={<Store className="size-5" />}
+          title="🏪 দোকান সেটিংস"
+          desc="ডেলিভারি চার্জ, দাম ও এলাকা"
+          defaultOpen
+        >
         {/* Delivery charge settings */}
         <div className="mt-6 rounded-2xl border border-honey/40 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1125,7 +1143,13 @@ export function AdminDashboard({
             <Switch checked={locOn} disabled={savingLoc} onCheckedChange={toggleLocation} />
           </div>
         </div>
+        </SettingsGroup>
 
+        <SettingsGroup
+          icon={<MessageCircle className="size-5" />}
+          title="💬 WhatsApp মেসেজ"
+          desc="অটো-মেসেজ সেটিংস"
+        >
         {/* WhatsApp auto-message settings */}
         <div className="mt-6 rounded-2xl border border-[#128C4B]/40 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1231,8 +1255,15 @@ export function AdminDashboard({
             </div>
           </div>
         </div>
+        </SettingsGroup>
 
         {/* Telegram order alerts */}
+        <SettingsGroup
+          icon={<Send className="size-5" />}
+          title="✈️ Telegram অ্যালার্ট"
+          desc="অর্ডার নোটিফিকেশন সেটআপ"
+        >
+        {/* Telegram order alerts card */}
         <div className="mt-6 rounded-2xl border border-[#229ED9]/40 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -1441,7 +1472,13 @@ export function AdminDashboard({
             )}
           </div>
         </div>
+        </SettingsGroup>
 
+        <SettingsGroup
+          icon={<Truck className="size-5" />}
+          title="🚚 কুরিয়ার ও বিক্রি"
+          desc="Steadfast, ShopBase ও ManyDial"
+        >
         {/* Steadfast courier setup + one-click consignment */}
         <div className="mt-6 rounded-2xl border border-red-300/60 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1579,7 +1616,13 @@ export function AdminDashboard({
 
         {/* ManyDial call automation setup + manual re-call */}
         <ManyDialSetup initial={initialManyDial} />
+        </SettingsGroup>
 
+        <SettingsGroup
+          icon={<Activity className="size-5" />}
+          title="📣 মার্কেটিং"
+          desc="Meta Pixel ও Google Tag Manager"
+        >
         {/* Pixel setup link */}
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-white p-5 shadow-sm">
           <div className="flex items-center gap-2">
@@ -1619,11 +1662,18 @@ export function AdminDashboard({
             <Activity className="mr-1.5 size-4 text-green-600" /> খুলুন
           </Button>
         </div>
+        </SettingsGroup>
 
+        <SettingsGroup
+          icon={<BadgeCheck className="size-5" />}
+          title="🛡️ সুরক্ষা"
+          desc="ফ্রড চেকার"
+        >
         {/* Fraud Checker setup */}
         <div className="mt-6">
           <FraudChecker initialConfig={initialFraud} />
         </div>
+        </SettingsGroup>
         </TabsContent>
         <TabsContent value="customers">
           <div className="mt-6 rounded-2xl border border-border bg-white p-5 shadow-sm">
@@ -1961,6 +2011,21 @@ export function AdminDashboard({
                         <div className="text-sm text-muted-foreground">
                           {orderColors(o)} • {o.packageName} • {toBn(o.quantity)}টি
                         </div>
+                        {(() => {
+                          const lines = parseOrderItems(o.items);
+                          if (lines.length === 0) return null;
+                          return (
+                            <div className="mt-1 space-y-0.5 text-xs">
+                              {lines.map((l, i) => (
+                                <div key={i} className="font-semibold text-ink">
+                                  🛍️ {l.name}
+                                  {l.variant ? ` (${l.variant})` : ""} ×{toBn(l.qty)} — ৳
+                                  {toBn(l.qty * l.unitPrice)}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {o.deliveryZone
                             ? `${config.zones.find((z) => z.id === o.deliveryZone)?.label ?? o.deliveryZone}: `

@@ -21,13 +21,33 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ tab?: string }>;
+}) {
   const cookieStore = await cookies();
   const token = cookieStore.get(ADMIN_COOKIE)?.value;
   if (!verifyToken(token)) {
     redirect("/admin/login");
   }
+  const tab = (await searchParams)?.tab;
 
+  let loaded:
+    | {
+        orders: Order[];
+        deliveryConfig: Awaited<ReturnType<typeof getDeliveryConfig>>;
+        productConfig: Awaited<ReturnType<typeof getProductConfig>>;
+        locationEnabled: boolean;
+        whatsapp: Awaited<ReturnType<typeof getWhatsappConfig>>;
+        telegram: Awaited<ReturnType<typeof getTelegramConfig>>;
+        steadfast: Awaited<ReturnType<typeof getSteadfastConfig>>;
+        shopbase: Awaited<ReturnType<typeof getShopbaseConfig>>;
+        manydial: Awaited<ReturnType<typeof getManyDialConfig>>;
+        fraud: Awaited<ReturnType<typeof getFraudConfig>>;
+        customers: Awaited<ReturnType<typeof db.customer.findMany>>;
+      }
+    | null = null;
   try {
     const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp, telegram, steadfast, shopbase, manydial, fraud, customers] =
       await Promise.all([
@@ -43,25 +63,42 @@ export default async function AdminPage() {
         getFraudConfig(),
         db.customer.findMany({ orderBy: { lastOrderAt: "desc" } }),
       ]);
-
-    return (
-      <AdminDashboard
-        initialOrders={orders}
-        deliveryConfig={deliveryConfig}
-        productConfig={productConfig}
-        locationEnabled={locationEnabled}
-        whatsapp={whatsapp}
-        telegram={telegram}
-        steadfast={steadfast}
-        shopbase={shopbase}
-        manydial={manydial}
-        fraud={fraud}
-        customers={customers}
-      />
-    );
+    loaded = {
+      orders,
+      deliveryConfig,
+      productConfig,
+      locationEnabled,
+      whatsapp,
+      telegram,
+      steadfast,
+      shopbase,
+      manydial,
+      fraud,
+      customers,
+    };
   } catch {
+    loaded = null;
+  }
+
+  if (!loaded) {
     return <DbErrorCard />;
   }
+  return (
+    <AdminDashboard
+      initialTab={tab}
+      initialOrders={loaded.orders}
+      deliveryConfig={loaded.deliveryConfig}
+      productConfig={loaded.productConfig}
+      locationEnabled={loaded.locationEnabled}
+      whatsapp={loaded.whatsapp}
+      telegram={loaded.telegram}
+      steadfast={loaded.steadfast}
+      shopbase={loaded.shopbase}
+      manydial={loaded.manydial}
+      fraud={loaded.fraud}
+      customers={loaded.customers}
+    />
+  );
 }
 
 /**

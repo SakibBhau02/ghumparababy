@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getDeliveryConfig, zoneCharge } from "@/lib/delivery";
-import { appendOrderBackup } from "@/lib/order-backup";
+import { getDeliveryConfig } from "@/lib/delivery";
+import { appendOrderBackup, orderColorIds } from "@/lib/order-backup";
 import { loadBdGeo } from "@/lib/bd-geo-server";
 import { isValidLocationChain } from "@/lib/bd-geo";
 import { getProductConfig } from "@/lib/product";
@@ -18,23 +18,22 @@ import { isManyDialReady } from "@/lib/manydial-shared";
 import { sendPurchaseCapi } from "@/lib/capi";
 import { getPixelConfig } from "@/lib/pixel-config";
 import { isCapiReady } from "@/lib/pixel-shared";
+import { MAX_QTY } from "@/lib/product-shared";
 import {
-  MAX_QTY,
-  isFreeShipping,
-  packageNameForQty,
-  priceForQty,
-} from "@/lib/product-shared";
+  orderTrackingSkus,
+  recomputeMixed,
+  sanitizeNewItems,
+  skuLabelForMixed,
+} from "@/lib/catalog-shared";
 import { BD_PHONE_EXAMPLE, normalizeBdPhone } from "@/lib/phone-shared";
-import { PRODUCT_COLORS, HOTLINE } from "@/lib/landing-data";
+import { HOTLINE } from "@/lib/landing-data";
 import { getFraudConfig, warmFraudCache } from "@/lib/courier-fraud";
-
-// Server-side color whitelist — always in sync with the landing palette.
-const COLORS: string[] = PRODUCT_COLORS.map((c) => c.id);
+import { getActiveCatalogItems, getMainProduct } from "@/lib/catalog";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, phone, address, division, district, upazila, colors, qty, color, zone } = body as {
+    const { name, phone, address, division, district, upazila, colors, qty, color, zone, newItems } = body as {
       name?: string;
       phone?: string;
       address?: string;
@@ -45,6 +44,7 @@ export async function POST(req: NextRequest) {
       qty?: unknown;
       color?: string;
       zone?: string;
+      newItems?: unknown;
     };
 
     // --- Validation ---
@@ -87,10 +87,21 @@ export async function POST(req: NextRequest) {
     }
 
     // --- Prices + toggles (server-side source of truth: admin settings) ---
-    const [productConfig, locationEnabled] = await Promise.all([
+    const [productConfig, locationEnabled, catalogItems, mainProduct] = await Promise.all([
       getProductConfig(),
       getLocationEnabled(),
+      getActiveCatalogItems(),
+      getMainProduct(),
     ]);
+
+    // Server-side color whitelist: admin color list + main product variants
+    // (single source = product page) — always in sync with the palette.
+    const COLORS: string[] = [
+      ...new Set([
+        ...(productConfig.colors ?? []).map((c) => c.id),
+        ...(mainProduct?.variants ?? []).map((v) => v.id),
+      ]),
+    ];
 
     // --- Location chain (Division → District → Upazila), admin-toggleable ---
     const location = { division: "", district: "", upazila: "" };
@@ -114,34 +125,46 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Quantity stepper (1..MAX_QTY) + volume-discount tier table.
-    // Server is the source of truth: per-piece price + total come from tiers.
-    const totalItems = Math.min(Math.max(Math.round(Number(qty)) || 0, 1), MAX_QTY);
-    const { perPiece, total: productPrice } = priceForQty(productConfig, totalItems);
+    // Legacy product stepper (0..MAX_QTY). 0 = extra-only order.
+    // Server is the source of truth: per-piece price comes from the tier
+    // table indexed by TOTAL pieces (see recomputeMixed).
+    const oldQty = Math.min(Math.max(Math.round(Number(qty)) || 0, 0), MAX_QTY);
 
-    // One color per item (single color string accepted for backward compat)
-    const pickedColors = Array.isArray(colors)
-      ? colors.filter(
-          (c): c is string => typeof c === "string" && COLORS.includes(c)
-        )
-      : typeof color === "string" && COLORS.includes(color)
-        ? [color]
+    // One color per legacy item (single color string accepted for backward compat).
+    // Ignored entirely when the order has no legacy pieces.
+    const pickedColors =
+      oldQty > 0
+        ? Array.isArray(colors)
+          ? colors.filter(
+              (c): c is string => typeof c === "string" && COLORS.includes(c)
+            )
+          : typeof color === "string" && COLORS.includes(color)
+            ? [color]
+            : []
         : [];
-    if (pickedColors.length !== totalItems) {
+    if (pickedColors.length !== oldQty) {
       return NextResponse.json(
-        { error: `অনুগ্রহ করে ${totalItems}টি পিসের জন্য ${totalItems}টি কালার বেছে নিন।` },
+        { error: `অনুগ্রহ করে ${oldQty}টি পিসের জন্য ${oldQty}টি কালার বেছে নিন।` },
+        { status: 400 }
+      );
+    }
+
+    // Extra-product lines (server-truth ids, qty, prices — client can't set prices).
+    const newLines = sanitizeNewItems(newItems, catalogItems);
+    const totalPieces =
+      oldQty + newLines.reduce((s, l) => s + l.qty, 0);
+    if (totalPieces < 1) {
+      return NextResponse.json(
+        { error: "অনুগ্রহ করে কমপক্ষে ১টি পণ্য বেছে নিন।" },
         { status: 400 }
       );
     }
 
     // --- Delivery charge (server-side source of truth: admin settings) ---
     // Volume perk: 3+ pieces in one order → free delivery (all zones).
-    const freeShip = isFreeShipping(totalItems);
     const deliveryConfig = await getDeliveryConfig();
     const needsZone = deliveryConfig.zones.some((z) => z.charge > 0);
-    let deliveryCharge = 0;
     let deliveryZone = "";
-
     if (needsZone) {
       const zoneExists = deliveryConfig.zones.some((z) => z.id === zone);
       if (!zone || !zoneExists) {
@@ -151,10 +174,19 @@ export async function POST(req: NextRequest) {
         );
       }
       deliveryZone = zone;
-      deliveryCharge = freeShip ? 0 : zoneCharge(deliveryConfig, zone);
     }
 
-    const totalPrice = productPrice + deliveryCharge;
+    // One code path for ALL pricing (legacy-only orders compute identically
+    // to before — zero behavior change for the old flow).
+    const computed = recomputeMixed({
+      productConfig,
+      deliveryConfig,
+      oldQty,
+      oldColors: pickedColors,
+      newLines,
+      zone: deliveryZone,
+      catalogItems,
+    });
 
     // Generate a readable order code: GP-YYMMDD-XXXX
     const now = new Date();
@@ -194,15 +226,16 @@ export async function POST(req: NextRequest) {
         division: location.division,
         district: location.district,
         upazila: location.upazila,
-        color: pickedColors[0],
-        colors: JSON.stringify(pickedColors),
-        packageName: packageNameForQty(totalItems),
-        quantity: totalItems,
-        unitPrice: perPiece,
-        deliveryZone,
-        deliveryCharge,
-        totalPrice,
+        color: computed.color,
+        colors: JSON.stringify(computed.colors),
+        packageName: computed.packageName,
+        quantity: computed.quantity,
+        unitPrice: computed.unitPrice,
+        deliveryZone: computed.deliveryZone,
+        deliveryCharge: computed.deliveryCharge,
+        totalPrice: computed.totalPrice,
         status: "pending",
+        items: JSON.stringify(computed.items),
       },
     });
 
@@ -236,7 +269,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Durable backup (append-only ledger + CSV copies) — never blocks the order
-    await appendOrderBackup(order);
+    await appendOrderBackup(order, (o) =>
+      skuLabelForMixed(productConfig, o.quantity, orderColorIds(o), o.items)
+    );
 
     // Fraud auto-check warmup (best-effort background — never blocks the order).
     // Result lands in the 12h fraud cache, so the admin dashboard order badges
@@ -262,6 +297,12 @@ export async function POST(req: NextRequest) {
           phone: order.phone,
           clientIp: fwd.split(",")[0].trim(),
           userAgent: req.headers.get("user-agent") ?? "",
+          skus: orderTrackingSkus(
+            productConfig,
+            computed.quantity,
+            pickedColors,
+            computed.items
+          ),
         });
         if (!result.ok) {
           console.error("capi send failed:", order.orderCode, result.error);
@@ -286,6 +327,9 @@ export async function POST(req: NextRequest) {
         }
         const zoneLabel =
           deliveryConfig.zones.find((z) => z.id === deliveryZone)?.label ?? deliveryZone;
+        const newBits = computed.items
+          .filter((l) => l.productId !== "ghumpara")
+          .map((l) => `${l.name} (${l.variant}) ×${l.qty}`);
         const result = await sendNewOrderAlert(tgConfig, {
           orderCode: order.orderCode,
           name: order.name,
@@ -301,6 +345,7 @@ export async function POST(req: NextRequest) {
           deliveryZoneLabel: zoneLabel,
           deliveryCharge: order.deliveryCharge,
           totalPrice: order.totalPrice,
+          itemsText: newBits.length > 0 ? newBits.join(", ") : undefined,
         });
         if (!result.ok) {
           console.error("telegram send failed:", order.orderCode, result.error);
@@ -331,8 +376,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       orderCode: order.orderCode,
-      productPrice,
-      deliveryCharge,
+      productPrice: computed.productTotal,
+      deliveryCharge: order.deliveryCharge,
       totalPrice: order.totalPrice,
       message:
         "আপনার অর্ডার সফলভাবে গ্রহণ করা হয়েছে! আমাদের প্রতিনিধি শীঘ্রই কল করে অর্ডার কনফার্ম করবেন।",

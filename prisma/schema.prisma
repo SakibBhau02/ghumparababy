@@ -35,7 +35,14 @@ model Order {
   trackingCode  String   @default("")
   shopbaseOrderId String @default("")
   adminNote     String   @default("")
-  createdAt     DateTime @default(now())
+  /**
+   * Mixed-cart line items (JSON array of OrderLineItem).
+   * "[]" = legacy single-product order (old columns are the truth).
+   * New orders always store full lines here; legacy columns stay filled
+   * as a summary so every old consumer keeps working.
+   */
+  items         String   @default("[]")
+  createdAt DateTime @default(now())
 }
 
 model Setting {
@@ -58,4 +65,45 @@ model Customer {
   totalSpent   Int      @default(0)
   firstOrderAt DateTime @default(now())
   lastOrderAt  DateTime @default(now())
+}
+
+model Product {
+  id              String           @id @default(cuid())
+  name            String
+  tagline         String           @default("")
+  description     String           @default("")
+  imageUrl        String           @default("")
+  price           Int              @default(0)
+  oldPrice        Int              @default(0)
+  sku             String           @default("")
+  shopbaseSku     String           @default("")
+  size            String           @default("")
+  maxQty          Int              @default(5)
+  stock           Int              @default(0)
+  featured      Boolean          @default(false)
+  featuredOrder Int              @default(0)
+  active          Boolean          @default(true)
+  sortOrder       Int              @default(0)
+  variants        ProductVariant[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model ProductVariant {
+  id          String  @id @default(cuid())
+  productId   String
+  name        String
+  label       String  @default("")
+  colorHex    String  @default("")
+  imageUrl    String  @default("")
+  sku         String  @default("")
+  shopbaseSku String  @default("")
+  price       Int?
+  oldPrice    Int?
+  stock       Int     @default(0)
+  active      Boolean @default(true)
+  sortOrder   Int     @default(0)
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
 }

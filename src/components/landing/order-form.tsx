@@ -1,46 +1,76 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { PRODUCT_COLORS, toBn, HOTLINE, HOTLINE_LINK, WHATSAPP_NUMBER, WHATSAPP_DISPLAY } from "@/lib/landing-data";
+import { toBn, HOTLINE, WHATSAPP_NUMBER, WHATSAPP_DISPLAY } from "@/lib/landing-data";
 import { BD_PHONE_EXAMPLE, normalizeBdPhone } from "@/lib/phone-shared";
 import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import {
-  MAX_QTY,
-  PACKAGE_META,
+  FREE_SHIPPING_MIN_QTY,
   isFreeShipping,
   packageNameForQty,
   priceForQty,
   skusForOrder,
   type ProductConfig,
 } from "@/lib/product-shared";
+import {
+  MAIN_PRODUCT_ID,
+  NEW_COLLECTION,
+  NEW_ITEM_MAX_QTY,
+  flattenCatalog,
+  type CatalogItem,
+  type CatalogOrderLine,
+} from "@/lib/catalog-shared";
 import type { LocationSelection } from "@/lib/bd-geo";
 import { AddressCascade } from "@/components/landing/address-cascade";
+import { LiveCountBadge } from "@/components/landing/live-count";
 import { pixelTrack } from "@/lib/pixel";
-import { CheckCircle2, Loader2, Phone, ShieldCheck, Truck, ShoppingBag } from "lucide-react";
+import { CheckCircle2, Flame, Loader2, Phone, ShieldCheck, Truck, ShoppingBag } from "lucide-react";
+
+/** Empty-DB fallback lines (static hooded swaddles, never priced wrong — server re-prices). */
+function staticLines(): CatalogOrderLine[] {
+  return NEW_COLLECTION.map((p) => ({
+    ...p,
+    productId: p.id,
+    maxQty: NEW_ITEM_MAX_QTY,
+    stock: 0,
+    featured: false,
+  }));
+}
+
+function lineKey(l: CatalogOrderLine): string {
+  return `${l.productId}${l.variantId ? `:${l.variantId}` : ""}`;
+}
+
+/** 01XXXXXXXXX → prettified + normalized (strips 880/+880, keeps digits). */
+function autoFormatBdPhone(raw: string): string {
+  let d = raw.replace(/\D+/g, "");
+  if (d.startsWith("880")) d = "0" + d.slice(3);
+  if (d.startsWith("+")) d = d.slice(1);
+  if (d.length > 11) d = d.slice(0, 11);
+  return d;
+}
 
 export function OrderForm({
   deliveryConfig,
   productConfig,
   locationEnabled,
+  catalogItems,
 }: {
   deliveryConfig: DeliveryConfig;
   productConfig: ProductConfig;
   locationEnabled: boolean;
+  catalogItems: CatalogItem[];
 }) {
   const { toast } = useToast();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
-  // Quantity stepper (1..MAX_QTY). 1/2/3 quick-select presets set exact qty;
-  // per-piece price falls automatically as qty grows (volume tiers).
-  const [qty, setQty] = useState<number>(2);
-  const [colors, setColors] = useState<string[]>(["pink", "pink"]);
   const [zone, setZone] = useState<string>(deliveryConfig.zones[0]?.id ?? "");
   const [location, setLocation] = useState<LocationSelection>({
     division: "",
@@ -56,41 +86,93 @@ export function OrderForm({
     totalPrice: number;
   } | null>(null);
 
-  // Package quick-select presets (1/2/3 pcs) + per-piece tiers.
-  const packageOptions = productConfig.packages.map((p) => {
-    const meta = PACKAGE_META[p.id];
-    const preset = priceForQty(productConfig, meta.quantity);
-    return {
-      id: p.id,
-      name: meta.formName,
-      qtyPreset: meta.quantity,
-      price: preset.total,
-      unit: `৳${toBn(preset.perPiece)}/পিস${meta.unitSuffix}`,
-    };
-  });
+  // Unified buyable list: every active catalog line gets its own row
+  // (flattenCatalog orders featured-first, then newest-first).
+  // Static fallback when DB is empty.
+  const catalogLines = useMemo(() => {
+    const fromDb = catalogItems && catalogItems.length > 0 ? flattenCatalog(catalogItems) : [];
+    return fromDb.length > 0 ? fromDb : staticLines();
+  }, [catalogItems]);
 
-  const totalItems = qty;
-  const { perPiece, total: pkgTotal } = priceForQty(productConfig, qty);
-  const pkgName = packageNameForQty(qty);
-  const freeShip = isFreeShipping(qty);
-  const firstColor = PRODUCT_COLORS.find((c) => c.id === colors[0]) ?? PRODUCT_COLORS[1];
+  // THE cart: { "<productId>:<variantId>": qty } — server-truth pricing.
+  const [newCart, setNewCart] = useState<Record<string, number>>({});
+  const setNewQty = (l: CatalogOrderLine, next: number) => {
+    const cap = l.stock > 0 && l.stock < l.maxQty ? l.stock : l.maxQty;
+    const clamped = Math.min(Math.max(Math.round(next) || 0, 0), Math.max(cap, 0));
+    setNewCart((cur) => ({ ...cur, [lineKey(l)]: clamped }));
+  };
 
-  // Keep exactly one color slot per item when quantity changes.
-  // New slots copy the FIRST chosen color (not a fixed default) — most
-  // buyers want matching pieces, so the machine does it for them (Tesler).
-  useEffect(() => {
-    setColors((cur) => {
-      if (cur.length === totalItems) return cur;
-      if (cur.length > totalItems) return cur.slice(0, totalItems);
-      const fill = cur[0] ?? "pink";
-      return [...cur, ...Array<string>(totalItems - cur.length).fill(fill)];
-    });
-  }, [totalItems]);
+  // Split picked lines: flagship (tier anchor) vs extra lines.
+  const picked = catalogLines
+    .map((l) => ({ line: l, qty: newCart[lineKey(l)] ?? 0 }))
+    .filter((p) => p.qty > 0);
+  const mainPicked = picked.filter((p) => p.line.productId === MAIN_PRODUCT_ID);
+  const extraPicked = picked.filter((p) => p.line.productId !== MAIN_PRODUCT_ID);
+
+  // Legacy-shaped values for the shared pricing pipeline (unchanged math):
+  // qty = flagship pieces, colors = one variant id per flagship piece.
+  const qty = mainPicked.reduce((s, p) => s + p.qty, 0);
+  const colors = mainPicked.flatMap((p) =>
+    Array<string>(p.qty).fill(p.line.variantId ?? p.line.productId)
+  );
+  const newLines = extraPicked.map((p) => ({
+    id: p.line.productId,
+    variantId: p.line.variantId,
+    line: p.line,
+    qty: p.qty,
+  }));
+  const newCount = newLines.reduce((s, l) => s + l.qty, 0);
+
+  // UNIFORM PRICING: every piece costs the tier per-piece price for the
+  // total piece count (settings table — server recompute uses the same rule).
+  const allPieces = qty + newCount;
+  const { perPiece } = priceForQty(productConfig, Math.max(allPieces, 1));
+  const newTotal = perPiece * newCount;
+  const pkgTotal = perPiece * qty;
+  const pkgName = qty > 0 ? packageNameForQty(qty) : "এক্সট্রা প্রোডাক্ট";
+  const freeShip = isFreeShipping(allPieces);
+
+  // Combo strip data — live from admin tier config (never hardcoded).
+  const tier1 = priceForQty(productConfig, 1);
+  const tier2 = priceForQty(productConfig, 2);
+  const tier3 = priceForQty(productConfig, 3);
+  const comboCards = [
+    { n: 1, perPiece: tier1.perPiece, total: tier1.total, save: 0, free: false },
+    {
+      n: 2,
+      perPiece: tier2.perPiece,
+      total: tier2.total,
+      save: Math.max(tier1.perPiece * 2 - tier2.total, 0),
+      free: isFreeShipping(2),
+    },
+    {
+      n: 3,
+      perPiece: tier3.perPiece,
+      total: tier3.total,
+      save: Math.max(tier1.perPiece * 3 - tier3.total, 0),
+      free: isFreeShipping(3),
+    },
+  ];
+  // Dynamic next-reward line under the strip.
+  const progressLine =
+    allPieces < 2
+      ? `আরও ${toBn(2 - allPieces)}টি নিলে ${toBn(tier2.perPiece)}/পিস!`
+      : allPieces < FREE_SHIPPING_MIN_QTY
+        ? `আরও ${toBn(FREE_SHIPPING_MIN_QTY - allPieces)}টি নিলে ${toBn(tier3.perPiece)}/পিস + ডেলিভারি ফ্রি!`
+        : "🎉 সেরা দাম + ফ্রি ডেলিভারি চালু!";
+  const mainLabels = [...new Set(mainPicked.map((p) => p.line.variantLabel))];
+  const firstPicked = picked.length > 0 ? picked[0].line : undefined;
+  const previewImg = firstPicked?.image ?? staticLines()[0].image;
 
   const zoneNeeded = !isAllFree(deliveryConfig);
   const zoneObj = deliveryConfig.zones.find((z) => z.id === zone);
   const currentCharge = zoneNeeded ? (freeShip ? 0 : zoneCharge(deliveryConfig, zone)) : 0;
-  const grandTotal = pkgTotal + currentCharge;
+  const grandTotal = pkgTotal + newTotal + currentCharge;
+
+  // Live savings vs single-piece price (+ delivery saved when free).
+  const flagshipSave = Math.max(tier1.perPiece * qty - pkgTotal, 0);
+  const normalDelivery = zoneNeeded && zone ? zoneCharge(deliveryConfig, zone) : 0;
+  const totalSave = flagshipSave + (freeShip ? normalDelivery : 0);
 
   // Meta Pixel: InitiateCheckout fires once, on the user's first interaction with the order form
   const initiated = useRef(false);
@@ -98,17 +180,39 @@ export function OrderForm({
     if (initiated.current) return;
     initiated.current = true;
     pixelTrack("InitiateCheckout", {
-      value: (price ?? pkgTotal) + currentCharge,
+      value: price ?? grandTotal,
       currency: "BDT",
       content_name: "ঘুমপাড়া বেবি সোয়াডেল",
-      content_ids: skusForOrder(productConfig, qty, colors),
+      content_ids: [
+        ...skusForOrder(productConfig, qty, colors),
+        ...newLines.map((l) => l.line.shopbaseSku).filter((s): s is string => !!s && s.length > 0),
+      ],
     });
+  };
+
+  // Tap a combo card → select exactly the FIRST N lines (one piece each).
+  // e.g. ৩টি = first three variants ×1. No-op when already exact.
+  const quickSet = (n: number) => {
+    const target = catalogLines.slice(0, Math.max(n, 0));
+    const next: Record<string, number> = {};
+    for (const l of target) next[lineKey(l)] = 1;
+    setNewCart(next);
+    fireInitiate();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     // Double-click guard: ignore re-submits while a request is in flight.
     if (loading) return;
+    // Cart must not be empty.
+    if (qty + newCount < 1) {
+      toast({
+        title: "পণ্য বেছে নিন",
+        description: "অনুগ্রহ করে কমপক্ষে ১টি পণ্য বেছে নিন।",
+        variant: "destructive",
+      });
+      return;
+    }
     // Frontend BD-format gate: wrong number → no submit, clear Bangla message.
     if (!normalizeBdPhone(phone)) {
       toast({
@@ -124,7 +228,16 @@ export function OrderForm({
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone, address, ...location, colors, qty, zone }),
+        body: JSON.stringify({
+          name,
+          phone,
+          address,
+          ...location,
+          colors,
+          qty,
+          zone,
+          newItems: newLines.map((l) => ({ id: l.id, qty: l.qty, variantId: l.variantId })),
+        }),
       });
       const data = await res.json();
 
@@ -153,7 +266,10 @@ export function OrderForm({
         value: data.totalPrice,
         currency: "BDT",
         content_name: "ঘুমপাড়া বেবি সোয়াডেল",
-        content_ids: skusForOrder(productConfig, qty, colors),
+        content_ids: [
+          ...skusForOrder(productConfig, qty, colors),
+          ...newLines.map((l) => l.line.shopbaseSku).filter((s): s is string => !!s && s.length > 0),
+        ],
         order_id: data.orderCode,
       }, data.orderCode);
       toast({
@@ -195,6 +311,8 @@ export function OrderForm({
           </p>
         </div>
 
+        <LiveCountBadge />
+
         {success ? (
           <div
             id="order-success"
@@ -214,47 +332,46 @@ export function OrderForm({
               <div className="mt-1 flex justify-between">
                 <span className="text-muted-foreground">ডেলিভারি চার্জ</span>
                 <span className={`font-semibold ${success.deliveryCharge > 0 ? "text-ink" : "text-leaf"}`}>
-                  {success.deliveryCharge > 0 ? `৳${toBn(success.deliveryCharge)}` : "ফ্রি!"}
+                  {success.deliveryCharge > 0 ? `৳${toBn(success.deliveryCharge)}` : "ফ্রি! 🎉"}
                 </span>
               </div>
-              <div className="mt-2 flex justify-between border-t border-border pt-2">
-                <span className="font-bold text-ink">সর্বমোট (ক্যাশ অন ডেলিভারি)</span>
+              <div className="mt-2 flex justify-between border-t border-border pt-2 text-base">
+                <span className="font-bold text-ink">সর্বমোট</span>
                 <span className="font-bold text-brand">৳{toBn(success.totalPrice)}</span>
               </div>
             </div>
-            <p className="mt-4 rounded-2xl bg-leaf/10 p-4 text-sm text-ink">
-              আমাদের প্রতিনিধি ২৪ ঘণ্টার মধ্যে কল করে অর্ডার কনফার্ম করবেন। পণ্য হাতে পেয়ে টাকা
-              দিন। যেকোনো প্রশ্নে কল করুন:{" "}
-              <a href={HOTLINE_LINK} className="font-bold text-brand">
-                {HOTLINE}
-              </a>
-            </p>
           </div>
         ) : (
-          <div className="mt-10 overflow-hidden rounded-[2rem] bg-white shadow-2xl shadow-brand/10">
+          <div className="group mx-auto mt-10 overflow-hidden rounded-[2rem] border border-border bg-white shadow-xl shadow-brand/10">
             <div className="grid lg:grid-cols-5">
-              {/* Left: selected product preview */}
+              {/* Left: selected product preview — hover zoom */}
               <div className="relative hidden lg:col-span-2 lg:block">
                 <div className="relative h-full min-h-[560px]">
-                    <Image
-                      src={firstColor.image}
-                      alt={`${firstColor.label} কালারের সোয়াডেল`}
+                  <Image
+                    src={previewImg}
+                    alt="আপনার নির্বাচিত পণ্য"
                     fill
-                    className="object-cover"
+                    className="object-cover transition-transform duration-700 lg:group-hover:scale-105"
                     sizes="40vw"
                   />
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-6 pt-16">
                     <div className="text-white">
                       <div className="text-sm opacity-80">আপনার নির্বাচন</div>
-                        <div className="text-lg font-bold">
-                          {firstColor.label} • {pkgName}
-                        </div>
+                      <div className="text-lg font-bold">
+                        {qty > 0
+                          ? `${mainLabels.join(", ")} • ${pkgName}`
+                          : firstPicked
+                            ? `${firstPicked.name} (${firstPicked.variantLabel})`
+                            : "পণ্য বেছে নিন"}
+                        {newCount > 0 && qty > 0 ? ` + আরও ${toBn(newCount)}টি` : ""}
+                      </div>
                       <div className="mt-1 text-2xl font-bold text-honey">
-                        ৳{toBn(pkgTotal)}
+                        ৳{toBn(grandTotal)}
                       </div>
                       <div className="mt-0.5 text-sm font-semibold text-white/85">
-                        ৳{toBn(perPiece)}/পিস • {toBn(totalItems)}টি
+                        {toBn(allPieces)}টি পণ্য
                         {freeShip ? " • ডেলিভারি ফ্রি 🎉" : ""}
+                        {totalSave > 0 ? ` • ৳${toBn(totalSave)} সাশ্রয়` : ""}
                       </div>
                     </div>
                   </div>
@@ -263,153 +380,167 @@ export function OrderForm({
 
               {/* Right: form */}
               <div className="p-6 sm:p-8 lg:col-span-3">
+                {/* Mobile product summary (lg:hidden) — mobile-first CRO */}
+                <div className="mb-5 flex items-center gap-3 rounded-2xl border border-border bg-cream/60 p-3 lg:hidden">
+                  <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-border">
+                    <Image src={previewImg} alt="নির্বাচিত পণ্য" fill className="object-cover" sizes="64px" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-bold text-ink">
+                      {qty > 0
+                        ? `${mainLabels.join(", ")} • ${pkgName}`
+                        : firstPicked
+                          ? `${firstPicked.name} (${firstPicked.variantLabel})`
+                          : "পণ্য বেছে নিন"}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {toBn(allPieces)}টি পণ্য • ডেলিভারি {freeShip ? "ফ্রি" : "চার্জ সহ"}
+                      {totalSave > 0 ? ` • ৳${toBn(totalSave)} সাশ্রয়` : ""}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-lg font-bold text-brand">৳{toBn(grandTotal)}</div>
+                </div>
+
                 <form onSubmit={handleSubmit} className="space-y-5">
-                  {/* Package quick-select (1/2/3 pcs) — fine-tune below one by one */}
+                  {/* Products — one row per variant, all from the catalog */}
                   <div>
-                    <Label className="text-base font-bold text-ink">১. প্যাকেজ নির্বাচন করুন</Label>
-                    <div className="mt-2.5 grid gap-2.5 sm:grid-cols-3">
-                      {packageOptions.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                            onClick={() => {
-                              setQty(p.qtyPreset);
-                              fireInitiate(p.price);
-                            }}
-                          aria-pressed={qty === p.qtyPreset}
-                          className={`rounded-2xl border-2 p-3.5 text-left transition-all ${
-                            qty === p.qtyPreset
-                              ? "border-brand bg-brand-soft/60"
-                              : "border-border hover:border-honey/50"
-                          }`}
-                        >
-                          <div className="text-sm font-bold text-ink">{p.name}</div>
-                          <div className="mt-0.5 text-base font-bold text-brand">
-                            ৳{toBn(p.price)}
-                          </div>
-                          <div className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
-                            {p.unit}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Quantity stepper — one by one, cheaper per piece as qty grows */}
-                  <div className="mt-5">
                     <Label className="text-base font-bold text-ink">
-                      পরিমাণ — একটা একটা করে বাড়ান, প্রতি পিস সস্তা হবে
-                    </Label>
-                    <div className="mt-2.5 flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setQty((n) => Math.max(1, n - 1))}
-                        disabled={qty <= 1}
-                        aria-label="সংখ্যা কমান"
-                        className="grid size-11 place-items-center rounded-full border-2 border-border text-xl font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
-                      >
-                        −
-                      </button>
-                      <span className="min-w-20 text-center text-lg font-bold text-ink">
-                        {toBn(qty)}টি{" "}
-                        <span className="text-sm font-normal text-muted-foreground">
-                          (৳{toBn(perPiece)}/পিস)
-                        </span>
+                      ১. প্রোডাক্ট বেছে নিন{" "}
+                      <span className="font-normal text-muted-foreground">
+                        ({toBn(catalogLines.length)}টি অপশন)
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => setQty((n) => Math.min(MAX_QTY, n + 1))}
-                        disabled={qty >= MAX_QTY}
-                        aria-label="সংখ্যা বাড়ান"
-                        className="grid size-11 place-items-center rounded-full border-2 border-border text-xl font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
-                      >
-                        +
-                      </button>
-                    </div>
-                    <p className="mt-1.5 text-xs font-semibold text-leaf">
-                      {freeShip
-                        ? "🎉 ৩+ পিসে ডেলিভারি সম্পূর্ণ ফ্রি!"
-                        : `আরও ${toBn(3 - qty)}টি নিলে ডেলিভারি ফ্রি!`}
-                    </p>
-                  </div>
-
-                  {/* Color selection — one picker per item */}
-                  <div>
-                    <Label className="text-base font-bold text-ink">
-                      ২. কালার বেছে নিন
-                      {totalItems > 1 ? ` (${toBn(totalItems)}টি পিসের জন্য ${toBn(totalItems)}টি কালার)` : ""}
                     </Label>
-                    {/* One-tap: paint every piece the same color, then tweak individuals */}
-                    <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-2xl bg-cream p-3">
-                      <span className="text-xs font-bold text-ink">সবগুলো একসাথে:</span>
-                      {PRODUCT_COLORS.map((c) => {
-                        const allThis = colors.length > 0 && colors.every((v) => v === c.id);
+                    <p className="mt-1 text-xs font-semibold text-leaf">
+                      💡 {progressLine}
+                    </p>
+                    {/* Combo strip — live tier prices, tap to quick-set flagship qty */}
+                    <div className="mt-2.5 grid grid-cols-3 gap-2">
+                      {comboCards.map((c) => {
+                        const active = c.n === 3 ? allPieces >= 3 : allPieces === c.n;
                         return (
                           <button
-                            key={c.id}
+                            key={c.n}
                             type="button"
-                            onClick={() => {
-                              setColors(Array<string>(totalItems).fill(c.id));
-                              fireInitiate();
-                            }}
-                            aria-pressed={allThis}
-                            aria-label={`সবগুলো ${c.label}`}
-                            title={`সবগুলো ${c.label}`}
-                            className={`flex items-center gap-1.5 rounded-full border-2 py-1 pl-1 pr-2.5 transition-all ${
-                              allThis ? "border-brand bg-brand-soft/60" : "border-border bg-white hover:border-honey/60"
+                            onClick={() => quickSet(c.n)}
+                            aria-pressed={active}
+                            aria-label={`${toBn(c.n)}টি${c.n === 3 ? "+" : ""} — মোট ৳${toBn(c.total)}`}
+                            className={`rounded-2xl border-2 p-2 text-center transition-all ${
+                              active
+                                ? "border-brand bg-brand-soft/70 shadow-md shadow-brand/20"
+                                : "border-border bg-white hover:border-honey/60"
                             }`}
                           >
-                            <span
-                              className="inline-block size-5 rounded-full border border-black/20"
-                              style={{ backgroundColor: c.hex }}
-                            />
-                            <span className={`text-xs font-semibold ${allThis ? "text-brand" : "text-muted-foreground"}`}>
-                              {c.label}
-                            </span>
+                            <div className="text-sm font-bold text-ink">
+                              {toBn(c.n)}টি{c.n === 3 ? "+" : ""}
+                            </div>
+                            <div className="text-sm font-bold text-brand">
+                              ৳{toBn(c.perPiece)}/পিস
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              মোট ৳{toBn(c.total)}
+                            </div>
+                            {c.save > 0 ? (
+                              <div className="mx-auto mt-1 w-fit rounded-full bg-leaf/15 px-2 py-0.5 text-[10px] font-bold text-leaf">
+                                ৳{toBn(c.save)} ছাড়
+                              </div>
+                            ) : null}
+                            {c.free ? (
+                              <div className="mx-auto mt-1 w-fit rounded-full bg-brand px-2 py-0.5 text-[10px] font-bold text-white">
+                                ফ্রি ডেলিভারি
+                              </div>
+                            ) : null}
                           </button>
                         );
                       })}
                     </div>
-                    <div className="mt-2.5 space-y-4">
-                      {colors.map((col, i) => (
-                        <div key={i}>
-                          {totalItems > 1 && (
-                            <div className="mb-1.5 text-sm font-semibold text-ink">
-                              {toBn(i + 1)} নম্বর পিস
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      যেকোনো প্রোডাক্ট মিলিয়ে — মোট সংখ্যায় ছাড় প্রযোজ্য
+                    </p>
+                    <div className="mt-2.5 space-y-2.5">
+                      {catalogLines.map((l) => {
+                        const key = lineKey(l);
+                        const nq = newCart[key] ?? 0;
+                        const cap = l.stock > 0 && l.stock < l.maxQty ? l.stock : l.maxQty;
+                        const lowStock = l.stock > 0 && l.stock <= 10;
+                        return (
+                          <div
+                            key={key}
+                            className="flex items-center gap-3 rounded-2xl border border-border bg-white p-2.5"
+                          >
+                            <div className="relative size-16 shrink-0 overflow-hidden rounded-xl">
+                              <Image
+                                src={l.image}
+                                alt={`${l.name} (${l.variantLabel})`}
+                                fill
+                                className="object-cover"
+                                sizes="64px"
+                              />
+                              {lowStock ? (
+                                <span className="absolute bottom-0 inset-x-0 bg-rust/90 px-1 py-0.5 text-center text-[9px] font-bold text-white">
+                                  {toBn(l.stock)}টা বাকি
+                                </span>
+                              ) : null}
                             </div>
-                          )}
-                          <div className="grid grid-cols-4 gap-2.5">
-                            {PRODUCT_COLORS.map((c) => (
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-bold text-ink">
+                                {l.name} ({l.variantLabel}){" "}
+                                {l.featured ? (
+                                  <span className="ml-1 rounded-full bg-honey px-2 py-0.5 text-[10px] font-bold text-ink">
+                                    ⭐ ফিচার্ড
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-sm">
+                                <span className="font-bold text-brand">৳{toBn(perPiece)}</span>{" "}
+                                <span className="text-xs text-muted-foreground line-through">
+                                  ৳{toBn(l.oldPrice)}
+                                </span>
+                              </div>
+                              {lowStock ? (
+                                <div className="mt-0.5 flex items-center gap-1 text-[11px] font-bold text-rust">
+                                  <Flame className="size-3" /> শুধু {toBn(l.stock)}টা বাকি —
+                                  দ্রুত অর্ডার করুন!
+                                </div>
+                              ) : null}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
                               <button
-                                key={c.id}
                                 type="button"
+                                aria-label={`${l.variantLabel} কমান`}
                                 onClick={() => {
-                                  setColors((cur) => cur.map((v, j) => (j === i ? c.id : v)));
+                                  setNewQty(l, nq - 1);
                                   fireInitiate();
                                 }}
-                                aria-pressed={col === c.id}
-                                aria-label={c.label}
-                                className={`group flex flex-col items-center gap-1 rounded-xl border-2 p-1.5 transition-all ${
-                                  col === c.id ? "border-brand bg-brand-soft/50" : "border-transparent"
-                                }`}
+                                disabled={nq <= 0}
+                                className="grid size-9 place-items-center rounded-full border-2 border-border text-lg font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
                               >
-                                <div className="relative aspect-square w-full overflow-hidden rounded-lg">
-                                  <Image src={c.image} alt={c.label} fill className="object-cover" sizes="60px" />
-                                </div>
-                                <span className={`text-xs font-medium ${col === c.id ? "text-brand" : "text-muted-foreground"}`}>
-                                  {c.label}
-                                </span>
+                                −
                               </button>
-                            ))}
+                              <span className="min-w-6 text-center text-base font-bold text-ink">
+                                {toBn(nq)}
+                              </span>
+                              <button
+                                type="button"
+                                aria-label={`${l.variantLabel} বাড়ান`}
+                                onClick={() => {
+                                  setNewQty(l, nq + 1);
+                                  fireInitiate();
+                                }}
+                                disabled={nq >= cap}
+                                className="grid size-9 place-items-center rounded-full border-2 border-border text-lg font-bold text-ink transition-all hover:border-brand disabled:opacity-30"
+                              >
+                                +
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
                   {/* Customer info */}
                   <div className="space-y-4">
-                    <Label className="text-base font-bold text-ink">৩. ডেলিভারির তথ্য</Label>
+                    <Label className="text-base font-bold text-ink">২. ডেলিভারির তথ্য</Label>
                     <div>
                       <Label htmlFor="name" className="text-sm text-muted-foreground">
                         আপনার নাম *
@@ -426,7 +557,7 @@ export function OrderForm({
                         className="mt-1.5 h-12 rounded-xl border-border bg-cream/60 focus-visible:ring-brand"
                       />
                     </div>
-                      <div>
+                    <div>
                       <Label htmlFor="phone" className="text-sm text-muted-foreground">
                         মোবাইল নম্বর *
                       </Label>
@@ -436,7 +567,7 @@ export function OrderForm({
                         inputMode="numeric"
                         value={phone}
                         onChange={(e) => {
-                          setPhone(e.target.value);
+                          setPhone(autoFormatBdPhone(e.target.value));
                           fireInitiate();
                         }}
                         placeholder="01XXXXXXXXX"
@@ -480,13 +611,14 @@ export function OrderForm({
                         setLocation(v);
                         fireInitiate();
                       }}
+                      title="৩. আপনার এলাকা নির্বাচন করুন"
                     />
                   )}
 
                   {/* Delivery zone selection (only when charges apply) */}
                   {zoneNeeded && (
                     <div>
-                      <Label className="text-base font-bold text-ink">{locationEnabled ? "৫" : "৪"}. ডেলিভারি এলাকা নির্বাচন করুন</Label>
+                      <Label className="text-base font-bold text-ink">{locationEnabled ? "৪" : "৩"}. ডেলিভারি এলাকা নির্বাচন করুন</Label>
                       <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
                         {deliveryConfig.zones.map((z) => (
                           <button
@@ -525,19 +657,35 @@ export function OrderForm({
 
                   {/* Summary */}
                   <div className="rounded-2xl bg-cream p-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        {pkgName} ({firstColor.label}
-                        {totalItems > 1 ? ` +${toBn(totalItems - 1)}` : ""}) — ৳{toBn(perPiece)}/পিস
-                      </span>
-                      <span className="font-semibold text-ink">৳{toBn(pkgTotal)}</span>
-                    </div>
+                    {qty > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          {pkgName} ({mainLabels.join(", ")}
+                          {qty > 1 ? ` +${toBn(qty - 1)}` : ""}) — ৳{toBn(perPiece)}/পিস
+                        </span>
+                        <span className="font-semibold text-ink">৳{toBn(pkgTotal)}</span>
+                      </div>
+                    )}
+                    {newLines.map((l) => (
+                      <div key={lineKey(l.line)} className="mt-1 flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          {l.line.name} ({l.line.variantLabel}) ×{toBn(l.qty)}
+                        </span>
+                        <span className="font-semibold text-ink">৳{toBn(perPiece * l.qty)}</span>
+                      </div>
+                    ))}
                     <div className="mt-1 flex justify-between text-sm">
                       <span className="text-muted-foreground">ডেলিভারি চার্জ</span>
                       <span className={`font-semibold ${currentCharge > 0 ? "text-ink" : "text-leaf"}`}>
                         {currentCharge > 0 ? `৳${toBn(currentCharge)}` : "ফ্রি! 🎉"}
                       </span>
                     </div>
+                    {totalSave > 0 ? (
+                      <div className="mt-1 flex justify-between text-sm">
+                        <span className="font-bold text-leaf">🎉 মোট সাশ্রয়</span>
+                        <span className="font-bold text-leaf">৳{toBn(totalSave)}</span>
+                      </div>
+                    ) : null}
                     <div className="mt-2 flex justify-between border-t border-border pt-2 text-base">
                       <span className="font-bold text-ink">সর্বমোট</span>
                       <span className="font-bold text-brand">৳{toBn(grandTotal)}</span>

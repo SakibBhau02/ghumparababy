@@ -9,7 +9,7 @@
  * with from the client.
  */
 
-import { toBn } from "@/lib/landing-data";
+import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
 
 /** Hard cap for new orders (stepper 1..10). Legacy edits may exceed it. */
 export const MAX_QTY = 10;
@@ -54,6 +54,14 @@ export const DEFAULT_SKUS: Record<DisplayPackageConfig["id"], Record<string, str
   },
 };
 
+/** Display color swatch for the flagship product (admin-editable). */
+export type ProductColor = {
+  id: string;
+  label: string;
+  hex: string;
+  image: string;
+};
+
 export type ProductConfig = {
   /** Per-piece price tiers for qty 1..10 (index 0 = 1 pc). */
   tiers: number[];
@@ -61,6 +69,12 @@ export type ProductConfig = {
   packages: DisplayPackageConfig[];
   /** Fixed size for ShopBase / courier (default "F" = Free). */
   size: string;
+  /** Color swatches for the flagship product (defaults → PRODUCT_COLORS). */
+  colors: ProductColor[];
+  /** Optional flagship display name override (defaults → "ঘুমপাড়া বেবি সোয়াডেল"). */
+  name?: string;
+  /** Optional flagship tagline. */
+  tagline?: string;
 };
 
 /** Fixed display metadata per package (never edited in admin). */
@@ -102,6 +116,7 @@ export const DEFAULT_PRODUCT_CONFIG: ProductConfig = {
     { id: "combo3", oldPrice: 2697, skus: { ...DEFAULT_SKUS.combo3 } },
   ],
   size: "F",
+  colors: PRODUCT_COLORS.map((c) => ({ ...c })),
 };
 
 /** Package id that carries the SKU for a given total quantity (4+ pcs use family SKUs). */
@@ -236,6 +251,7 @@ function migrateLegacy(packages: unknown[]): ProductConfig | null {
       skus: { ...DEFAULT_SKUS[id] },
     })),
     size: "F",
+    colors: DEFAULT_PRODUCT_CONFIG.colors,
   };
 }
 
@@ -244,6 +260,27 @@ function sanitizeSku(input: unknown, fallback: string): string {
   const s = String(input ?? "").trim().toUpperCase();
   if (/^[A-Z0-9][A-Z0-9-_]{0,31}$/.test(s)) return s;
   return fallback;
+}
+
+/** Product color swatches from admin/DB — malformed entries fall back to defaults. */
+function sanitizeColors(input: unknown): ProductColor[] {
+  const defaults = DEFAULT_PRODUCT_CONFIG.colors;
+  if (!Array.isArray(input) || input.length === 0) return defaults;
+  const out: ProductColor[] = [];
+  for (const raw of input) {
+    if (!raw || typeof raw !== "object") continue;
+    const c = raw as { id?: unknown; label?: unknown; hex?: unknown; image?: unknown };
+    const id = typeof c.id === "string" && c.id.trim() ? c.id.trim() : "";
+    const label = typeof c.label === "string" && c.label.trim() ? c.label.trim() : id;
+    const hex =
+      typeof c.hex === "string" && /^#[0-9A-Fa-f]{3,8}$/.test(c.hex.trim())
+        ? c.hex.trim()
+        : "";
+    const image = typeof c.image === "string" && c.image.trim() ? c.image.trim() : "";
+    if (!id || !image) continue;
+    out.push({ id, label, hex, image });
+  }
+  return out.length > 0 ? out : defaults;
 }
 
 /** Variant SKU map for one package — missing/invalid entries fall back to defaults. */
@@ -283,7 +320,23 @@ export function sanitizeProductConfig(input: unknown): ProductConfig | null {
     const size = typeof (rec as { size?: unknown }).size === "string" && (rec as { size: string }).size.trim()
       ? (rec as { size: string }).size.trim()
       : "F";
-    return { tiers, packages: pkgs, size };
+    const name =
+      typeof (rec as { name?: unknown }).name === "string" &&
+      (rec as { name: string }).name.trim()
+        ? (rec as { name: string }).name.trim()
+        : undefined;
+    const tagline =
+      typeof (rec as { tagline?: unknown }).tagline === "string"
+        ? (rec as { tagline: string }).tagline.trim()
+        : undefined;
+    return {
+      tiers,
+      packages: pkgs,
+      size,
+      colors: sanitizeColors((rec as { colors?: unknown }).colors),
+      name,
+      tagline,
+    };
   }
 
   // Legacy shape (pre-tier): migrate admin's 1/2/3-pc prices forward.

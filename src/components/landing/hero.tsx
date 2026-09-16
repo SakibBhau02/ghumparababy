@@ -11,12 +11,15 @@ import { ShieldCheck, Truck, BadgeCheck, Star, ChevronDown } from "lucide-react"
 export function Hero({
   deliveryConfig,
   productConfig,
+  heroImage,
 }: {
   deliveryConfig: DeliveryConfig;
   productConfig: ProductConfig;
+  heroImage?: string;
 }) {
   const singlePrice = priceForQty(productConfig, 1).total;
   const free = isAllFree(deliveryConfig);
+  const img = heroImage || siteImage("/images/swaddle-blue.jpg");
   return (
     <section id="top" className="relative overflow-hidden pt-28 sm:pt-32">
       {/* soft background blobs */}
@@ -113,7 +116,7 @@ export function Hero({
         <div className="relative mx-auto w-full max-w-md lg:max-w-lg">
           <div className="relative aspect-square overflow-hidden rounded-[2.5rem] border-8 border-white shadow-2xl shadow-brand/20">
             <Image
-              src={siteImage("/images/swaddle-blue.jpg")}
+              src={img}
               alt="ঘুমপাড়া সোয়াডেল পরা নবজাতক — গভীর ঘুমে নিরাপদ"
               fill
               priority

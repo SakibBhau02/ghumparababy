@@ -75,6 +75,37 @@ export function buildItemsFromColors(
 }
 
 /**
+ * Build checkout items from stored order lines (mixed orders).
+ * Lines with their own shopbaseSku (new collection) go as-is;
+ * legacy-product lines map their colorIds through the per-color config.
+ * Unknown colors are skipped — the caller checks non-empty before sending.
+ */
+export function buildItemsFromLines(
+  config: ShopbaseConfig,
+  lines: { shopbaseSku?: string; qty: number; price: number; colorIds?: string[] }[]
+): { sku: string; qty: number; price: number }[] {
+  const bySku = new Map<string, { qty: number; price: number }>();
+  const add = (sku: string, qty: number, price: number) => {
+    const cur = bySku.get(sku);
+    if (cur) cur.qty += qty;
+    else bySku.set(sku, { qty, price });
+  };
+  for (const l of lines) {
+    const qty = Math.round(l.qty) || 0;
+    if (qty <= 0) continue;
+    if (l.shopbaseSku && l.shopbaseSku.trim()) {
+      add(l.shopbaseSku.trim(), qty, l.price);
+      continue;
+    }
+    for (const color of l.colorIds ?? []) {
+      const sku = config.skus[color] ?? DEFAULT_SKUS[color];
+      if (sku) add(sku, 1, l.price);
+    }
+  }
+  return [...bySku.entries()].map(([sku, v]) => ({ sku, qty: v.qty, price: v.price }));
+}
+
+/**
  * Place an order on ShopBase BD.
  * Never throws — callers show result.error to the admin in Bengali.
  */

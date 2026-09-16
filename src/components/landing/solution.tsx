@@ -43,11 +43,14 @@ const BENEFITS = [
 export function Solution({
   deliveryConfig,
   productConfig,
+  solutionImage,
 }: {
   deliveryConfig: DeliveryConfig;
   productConfig: ProductConfig;
+  solutionImage?: string;
 }) {
   const singlePrice = priceForQty(productConfig, 1).total;
+  const img = solutionImage || siteImage("/images/swaddle-brown.jpg");
   return (
     <section id="solution" className="py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4">
@@ -70,7 +73,7 @@ export function Solution({
           <div className="relative mx-auto w-full max-w-md lg:col-span-2">
             <div className="relative aspect-[4/5] overflow-hidden rounded-[2.5rem] border-8 border-white shadow-2xl shadow-brand/20">
               <Image
-                src={siteImage("/images/swaddle-brown.jpg")}
+                src={img}
                 alt="ঘুমপাড়া সোয়াডেলে মোড়া শান্ত ঘুমন্ত শিশু"
                 fill
                 className="object-cover"

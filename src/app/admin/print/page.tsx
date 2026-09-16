@@ -6,7 +6,12 @@ import { db } from "@/lib/db";
 import { ADMIN_COOKIE, verifyToken } from "@/lib/admin-auth";
 import { getDeliveryConfig } from "@/lib/delivery";
 import { getProductConfig } from "@/lib/product";
-import { skuLabelForOrder } from "@/lib/product-shared";
+import { skusForOrder, type ProductConfig } from "@/lib/product-shared";
+import {
+  getCatalogProduct,
+  parseOrderItems,
+  skuLabelForMixed,
+} from "@/lib/catalog-shared";
 import { PRODUCT_COLORS, toBn, HOTLINE } from "@/lib/landing-data";
 import { siteImage } from "@/lib/site-images";
 import { PrintButton } from "@/components/admin/print-button";
@@ -60,12 +65,14 @@ function Invoice({
   zoneNote,
   compact,
   sku,
+  productConfig,
 }: {
   order: Order;
   zoneLabel: string;
   zoneNote: string;
   compact: boolean;
   sku: string;
+  productConfig: ProductConfig;
 }) {
   const colors = colorIds(order);
   const loc = locationLine(order);
@@ -138,55 +145,108 @@ function Invoice({
           </tr>
         </thead>
         <tbody>
-          <tr className="border-t border-border align-top">
-            <td className="px-3 py-1.5">
-              <div className="flex items-start gap-2">
-                <span
-                  className={`relative block shrink-0 overflow-hidden rounded-md border border-border ${compact ? "size-9" : "size-12"}`}
-                >
-                  <Image
-                    src={productImage(order)}
-                    alt="সোয়াডেল"
-                    fill
-                    className="object-cover"
-                    sizes="48px"
-                  />
-                </span>
-                <span>
-                  <span className="font-bold text-ink">{order.packageName}</span>
-                  {sku ? (
-                    <span className="mt-0.5 block font-mono text-[11px] font-bold text-muted-foreground">
-                      SKU: {sku}
-                    </span>
-                  ) : null}
-                  <span className="mt-0.5 block font-semibold text-ink">
-                    কালার ({toBn(colors.length)}টি):
-                  </span>
-                  <span className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
-                    {colors.map((id, i) => {
-                      const meta = colorMeta(id);
-                      return (
-                        <span key={`${id}-${i}`} className="inline-flex items-center gap-1">
-                          <span
-                            className="inline-block size-3 rounded-[3px] border border-black/30"
-                            style={{ backgroundColor: meta.hex }}
-                          />
-                          <span>
-                            {toBn(i + 1)}. {meta.label}
+          {(() => {
+            const lines = parseOrderItems(order.items);
+            // Legacy orders: today's exact single-row layout (unchanged).
+            if (lines.length === 0) {
+              return (
+                <tr className="border-t border-border align-top">
+                  <td className="px-3 py-1.5">
+                    <div className="flex items-start gap-2">
+                      <span
+                        className={`relative block shrink-0 overflow-hidden rounded-md border border-border ${compact ? "size-9" : "size-12"}`}
+                      >
+                        <Image
+                          src={productImage(order)}
+                          alt="সোয়াডেল"
+                          fill
+                          className="object-cover"
+                          sizes="48px"
+                        />
+                      </span>
+                      <span>
+                        <span className="font-bold text-ink">{order.packageName}</span>
+                        {sku ? (
+                          <span className="mt-0.5 block font-mono text-[11px] font-bold text-muted-foreground">
+                            SKU: {sku}
                           </span>
+                        ) : null}
+                        <span className="mt-0.5 block font-semibold text-ink">
+                          কালার ({toBn(colors.length)}টি):
                         </span>
-                      );
-                    })}
-                  </span>
-                </span>
-              </div>
-            </td>
-            <td className="px-2 py-1.5 text-center font-bold">{toBn(order.quantity)}টি</td>
-            <td className="px-2 py-1.5 text-right">৳{toBn(order.unitPrice)}</td>
-            <td className="px-3 py-1.5 text-right font-bold">
-              ৳{toBn(order.unitPrice * order.quantity)}
-            </td>
-          </tr>
+                        <span className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+                          {colors.map((id, i) => {
+                            const meta = colorMeta(id);
+                            return (
+                              <span key={`${id}-${i}`} className="inline-flex items-center gap-1">
+                                <span
+                                  className="inline-block size-3 rounded-[3px] border border-black/30"
+                                  style={{ backgroundColor: meta.hex }}
+                                />
+                                <span>
+                                  {toBn(i + 1)}. {meta.label}
+                                </span>
+                              </span>
+                            );
+                          })}
+                        </span>
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-2 py-1.5 text-center font-bold">{toBn(order.quantity)}টি</td>
+                  <td className="px-2 py-1.5 text-right">৳{toBn(order.unitPrice)}</td>
+                  <td className="px-3 py-1.5 text-right font-bold">
+                    ৳{toBn(order.unitPrice * order.quantity)}
+                  </td>
+                </tr>
+              );
+            }
+            // Mixed orders: one row per line item.
+            return (
+              <>
+                {lines.map((l, i) => {
+                  const cat = getCatalogProduct(l.productId);
+                  const img = cat?.image ?? productImage(order);
+                  const lineSku = l.shopbaseSku
+                    ? `${l.shopbaseSku} ×${l.qty}`
+                    : skusForOrder(productConfig, l.qty, l.colorIds ?? []).join(", ");
+                  return (
+                    <tr key={i} className="border-t border-border align-top">
+                      <td className="px-3 py-1.5">
+                        <div className="flex items-start gap-2">
+                          <span
+                            className={`relative block shrink-0 overflow-hidden rounded-md border border-border ${compact ? "size-9" : "size-12"}`}
+                          >
+                            <Image
+                              src={img}
+                              alt={l.name}
+                              fill
+                              className="object-cover"
+                              sizes="48px"
+                            />
+                          </span>
+                          <span>
+                            <span className="font-bold text-ink">
+                              {l.name}
+                              {l.variant ? ` (${l.variant})` : ""}
+                            </span>
+                            <span className="mt-0.5 block font-mono text-[11px] font-bold text-muted-foreground">
+                              SKU: {l.shopbaseSku ? `${l.shopbaseSku} ×${l.qty}` : lineSku || sku}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5 text-center font-bold">{toBn(l.qty)}টি</td>
+                      <td className="px-2 py-1.5 text-right">৳{toBn(l.unitPrice)}</td>
+                      <td className="px-3 py-1.5 text-right font-bold">
+                        ৳{toBn(l.unitPrice * l.qty)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </>
+            );
+          })()}
           <tr className="border-t border-border">
             <td colSpan={3} className="px-3 py-1 text-right text-muted-foreground">
               ডেলিভারি চার্জ{zoneLabel ? ` (${zoneLabel})` : ""}
@@ -309,7 +369,7 @@ export default async function PrintPage({
       >
         {list.map((o) => (
           <div key={o.id} className={per === 6 ? "invoice-6up" : per === 4 ? "invoice-4up" : "invoice-2up"}>
-            <Invoice order={o} zoneLabel={zoneName(o.deliveryZone)} zoneNote={zoneNote(o.deliveryZone)} compact={per !== 2} sku={skuLabelForOrder(productConfig, o.quantity, colorIds(o))} />
+            <Invoice order={o} zoneLabel={zoneName(o.deliveryZone)} zoneNote={zoneNote(o.deliveryZone)} compact={per !== 2} sku={skuLabelForMixed(productConfig, o.quantity, colorIds(o), o.items)} productConfig={productConfig} />
           </div>
         ))}
       </div>

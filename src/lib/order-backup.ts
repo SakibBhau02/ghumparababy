@@ -37,6 +37,8 @@ export type BackupOrder = {
   pinned: boolean;
   waSent: boolean;
   createdAt: string | Date;
+  /** Mixed-cart line items JSON (absent on pre-items ledger rows). */
+  items?: string;
 };
 
 const BACKUP_DIR = path.join(process.cwd(), "db", "backups");

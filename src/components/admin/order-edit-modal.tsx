@@ -19,6 +19,7 @@ import {
   priceForQty,
   type ProductConfig,
 } from "@/lib/product-shared";
+import { parseOrderItems, splitOrderItems } from "@/lib/catalog-shared";
 import { zoneCharge, type DeliveryZone } from "@/lib/delivery-shared";
 import { AddressCascade } from "@/components/landing/address-cascade";
 import type { LocationSelection } from "@/lib/bd-geo";
@@ -38,6 +39,8 @@ export type EditableOrder = {
   packageName: string;
   quantity: number;
   deliveryZone: string;
+  /** Mixed-cart lines JSON (absent on legacy orders). */
+  items?: string;
 };
 
 function parseColors(raw: string, fallback: string): string[] {
@@ -82,13 +85,25 @@ export function OrderEditModal({
   /** shopbase mode only — receives the ShopBase order ID after a successful push. */
   onShopbaseSent?: (shopbaseOrderId: string) => void;
 }) {
-  const initial = parseQty(order.quantity);
+  // Mixed orders: the legacy (ঘুমপাড়া) part is editable here, extra-catalog
+  // lines are shown read-only and survive the save untouched (server merges).
+  // New-only orders hide the package/qty/color blocks entirely.
+  const storedLines = parseOrderItems(order.items);
+  const storedSplit = splitOrderItems(storedLines);
+  const hasOldPart =
+    storedLines.length === 0 || storedSplit.oldLines.length > 0;
+  const oldLine = storedSplit.oldLines[0];
+  const initial = hasOldPart ? parseQty(oldLine?.qty ?? order.quantity) : 0;
   const [name, setName] = useState(order.name);
   const [phone, setPhone] = useState(order.phone);
   const [address, setAddress] = useState(order.address);
   const [qty, setQty] = useState(initial);
   const [colors, setColors] = useState<string[]>(
-    parseColors(order.colors, order.color)
+    hasOldPart
+      ? oldLine?.colorIds?.length
+        ? oldLine.colorIds.filter((c): c is string => typeof c === "string")
+        : parseColors(order.colors, order.color)
+      : []
   );
   const [adminNote, setAdminNote] = useState(order.adminNote ?? "");
   const [zone, setZone] = useState(order.deliveryZone);
@@ -101,20 +116,26 @@ export function OrderEditModal({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { perPiece, total: itemsTotal } = priceForQty(products, qty);
-  const totalItems = qty;
+  // Preview mirrors the server recompute: legacy tier on TOTAL pieces +
+  // flat extra-catalog lines.
+  const newQtySum = storedSplit.newLines.reduce((s, l) => s + l.qty, 0);
+  const newSum = storedSplit.newLines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
+  const totalItems = (hasOldPart ? qty : 0) + newQtySum;
+  const { perPiece } = priceForQty(products, Math.max(totalItems, 1));
+  const itemsTotal = (hasOldPart ? perPiece * qty : 0) + newSum;
   const needsZone = zones.some((z) => z.charge > 0);
-  const charge = needsZone ? (isFreeShipping(qty) ? 0 : zoneCharge({ zones }, zone)) : 0;
+  const charge = needsZone ? (isFreeShipping(totalItems) ? 0 : zoneCharge({ zones }, zone)) : 0;
   const previewTotal = itemsTotal + charge;
 
-  // Keep one color slot per item
+  // Keep one color slot per LEGACY item (extra-catalog lines are fixed).
   useEffect(() => {
+    if (!hasOldPart) return;
     setColors((cur) => {
-      if (cur.length === totalItems) return cur;
-      if (cur.length > totalItems) return cur.slice(0, totalItems);
-      return [...cur, ...Array<string>(totalItems - cur.length).fill("pink")];
+      if (cur.length === qty) return cur;
+      if (cur.length > qty) return cur.slice(0, qty);
+      return [...cur, ...Array<string>(qty - cur.length).fill("pink")];
     });
-  }, [totalItems]);
+  }, [qty, hasOldPart]);
 
   const save = async () => {
     setSaving(true);
@@ -132,8 +153,8 @@ export function OrderEditModal({
             division: location.division,
             district: location.district,
             upazila: location.upazila,
-            qty,
-            colors,
+            // New-only orders: no legacy part to edit (server keeps lines).
+            ...(hasOldPart ? { qty, colors } : {}),
             zone,
             note: adminNote,
           },
@@ -210,53 +231,73 @@ export function OrderEditModal({
           {locationEnabled && (
             <AddressCascade value={location} onChange={setLocation} title="এলাকা" />
           )}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <Label>প্যাকেজ</Label>
-              <div className={`${inputCls} flex h-11 items-center font-bold`}>
-                {packageNameForQty(qty)}
+          {storedSplit.newLines.length > 0 && (
+            <div className="rounded-2xl border border-border bg-cream/60 p-3.5">
+              <div className="text-sm font-bold text-ink">🛍️ এক্সট্রা প্রোডাক্ট (এডিট হয় না)</div>
+              <div className="mt-1.5 space-y-1">
+                {storedSplit.newLines.map((l, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {l.name}
+                      {l.variant ? ` (${l.variant})` : ""} ×{toBn(l.qty)}
+                    </span>
+                    <span className="font-semibold text-ink">৳{toBn(l.qty * l.unitPrice)}</span>
+                  </div>
+                ))}
               </div>
             </div>
-            <div>
-              <Label>পিস সংখ্যা (১–৩০)</Label>
-              <Input
-                type="number"
-                min={1}
-                max={30}
-                value={qty}
-                onChange={(e) =>
-                  setQty(Math.min(Math.max(Number(e.target.value) || 1, 1), 30))
-                }
-                className={inputCls}
-              />
-            </div>
-          </div>
-          <p className="-mt-1 text-xs text-muted-foreground">
-            ৳{toBn(perPiece)}/পিস {isFreeShipping(qty) ? "• ৩+ পিসে ডেলিভারি ফ্রি 🎉" : `• আরও ${toBn(3 - qty)}টি নিলে ডেলিভারি ফ্রি`} • সর্বোচ্চ নতুন অর্ডার {toBn(MAX_QTY)}টি
-          </p>
-          <div>
-            <Label>কালার ({toBn(totalItems)}টি)</Label>
-            <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {colors.map((col, i) => (
-                <div key={i}>
-                  <span className="text-xs text-muted-foreground">{toBn(i + 1)} নং</span>
-                  <select
-                    value={col}
-                    onChange={(e) =>
-                      setColors((cur) => cur.map((v, j) => (j === i ? e.target.value : v)))
-                    }
-                    className={`${inputCls} mt-0.5 h-10 text-sm`}
-                  >
-                    {PRODUCT_COLORS.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
+          )}
+          {hasOldPart && (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label>প্যাকেজ</Label>
+                  <div className={`${inputCls} flex h-11 items-center font-bold`}>
+                    {packageNameForQty(qty)}
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
+                <div>
+                  <Label>পিস সংখ্যা (১–৩০)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={qty}
+                    onChange={(e) =>
+                      setQty(Math.min(Math.max(Number(e.target.value) || 1, 1), 30))
+                    }
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+              <p className="-mt-1 text-xs text-muted-foreground">
+                ৳{toBn(perPiece)}/পিস {isFreeShipping(totalItems) ? "• ৩+ পিসে ডেলিভারি ফ্রি 🎉" : `• আরও ${toBn(3 - totalItems)}টি নিলে ডেলিভারি ফ্রি`} • সর্বোচ্চ নতুন অর্ডার {toBn(MAX_QTY)}টি
+              </p>
+              <div>
+                <Label>কালার ({toBn(qty)}টি)</Label>
+                <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {colors.map((col, i) => (
+                    <div key={i}>
+                      <span className="text-xs text-muted-foreground">{toBn(i + 1)} নং</span>
+                      <select
+                        value={col}
+                        onChange={(e) =>
+                          setColors((cur) => cur.map((v, j) => (j === i ? e.target.value : v)))
+                        }
+                        className={`${inputCls} mt-0.5 h-10 text-sm`}
+                      >
+                        {PRODUCT_COLORS.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
           <div>
             <Label>📝 Admin নোট <span className="font-normal text-muted-foreground">(শুধু আপনার জন্য — কাস্টমার/invoice-তে যাবে না)</span></Label>
             <Textarea
