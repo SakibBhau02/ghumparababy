@@ -378,8 +378,10 @@ export function OrderForm({
                 </div>
               </div>
 
-              {/* Right: form */}
-              <div className="p-4 sm:p-8 lg:col-span-3">
+              {/* Right: form — min-w-0 stops any deep min-content
+                  (combo prices, labels, fallback-font metrics) from
+                  stretching this grid item's auto track on mobile. */}
+              <div className="min-w-0 p-4 sm:p-8 lg:col-span-3">
                 {/* Mobile product summary (lg:hidden) — mobile-first CRO */}
                 <div className="mb-5 flex items-center gap-3 rounded-2xl border border-border bg-cream/60 p-3 lg:hidden">
                   <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-border">
@@ -393,7 +395,7 @@ export function OrderForm({
                           ? `${firstPicked.name} (${firstPicked.variantLabel})`
                           : "পণ্য বেছে নিন"}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-sm leading-snug text-muted-foreground">
                       {toBn(allPieces)}টি পণ্য • ডেলিভারি {freeShip ? "ফ্রি" : "চার্জ সহ"}
                       {totalSave > 0 ? ` • ৳${toBn(totalSave)} সাশ্রয়` : ""}
                     </div>
@@ -404,7 +406,7 @@ export function OrderForm({
                 <form onSubmit={handleSubmit} className="space-y-5">
                   {/* Products — one row per variant, all from the catalog */}
                   <div>
-                    <Label className="text-base font-bold text-ink">
+                    <Label className="flex-wrap text-base font-bold text-ink">
                       ১. প্রোডাক্ট বেছে নিন{" "}
                       <span className="font-normal text-muted-foreground">
                         ({toBn(catalogLines.length)}টি অপশন)
@@ -424,7 +426,7 @@ export function OrderForm({
                             onClick={() => quickSet(c.n)}
                             aria-pressed={active}
                             aria-label={`${toBn(c.n)}টি${c.n === 3 ? "+" : ""} — মোট ৳${toBn(c.total)}`}
-                            className={`rounded-2xl border-2 p-1.5 text-center transition-all sm:p-2 ${
+                            className={`min-w-0 rounded-2xl border-2 p-1.5 text-center transition-all sm:p-2 ${
                               active
                                 ? "border-brand bg-brand-soft/70 shadow-md shadow-brand/20"
                                 : "border-border bg-white hover:border-honey/60"
@@ -433,19 +435,19 @@ export function OrderForm({
                             <div className="text-[13px] font-bold leading-tight text-ink sm:text-sm">
                               {toBn(c.n)}টি{c.n === 3 ? "+" : ""}
                             </div>
-                            <div className="whitespace-nowrap text-[13px] font-bold leading-tight text-brand sm:text-sm">
+                            <div className="text-[13px] font-bold leading-tight text-brand sm:text-sm sm:whitespace-nowrap">
                               ৳{toBn(c.perPiece)}/পিস
                             </div>
-                            <div className="whitespace-nowrap text-[10px] leading-tight text-muted-foreground sm:text-[11px]">
+                            <div className="text-[10px] leading-tight text-muted-foreground sm:text-[11px]">
                               মোট ৳{toBn(c.total)}
                             </div>
                             {c.save > 0 ? (
-                              <div className="mx-auto mt-1 w-fit whitespace-nowrap rounded-full bg-leaf/15 px-1.5 py-0.5 text-[10px] font-bold leading-tight text-leaf sm:px-2">
+                              <div className="mx-auto mt-1 w-fit rounded-full bg-leaf/15 px-1.5 py-0.5 text-[10px] font-bold leading-tight text-leaf sm:px-2 sm:whitespace-nowrap">
                                 ৳{toBn(c.save)} ছাড়
                               </div>
                             ) : null}
                             {c.free ? (
-                              <div className="mx-auto mt-1 w-fit whitespace-nowrap rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-bold leading-tight text-white sm:px-2">
+                              <div className="mx-auto mt-1 w-fit rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-bold leading-tight text-white sm:px-2 sm:whitespace-nowrap">
                                 ফ্রি ডেলিভারি
                               </div>
                             ) : null}
@@ -481,7 +483,7 @@ export function OrderForm({
                                 </span>
                               ) : null}
                             </div>
-                            <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 overflow-hidden">
                               <div className="line-clamp-2 break-words text-sm font-bold leading-snug text-ink">
                                 {l.name} ({l.variantLabel}){" "}
                                 {l.featured ? (
