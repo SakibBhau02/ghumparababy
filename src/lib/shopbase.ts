@@ -53,10 +53,41 @@ export type SbResult =
   | { ok: false; error: string };
 
 /**
+ * Single SKU lookup: live catalog variant SKU (the 7 flagship variant SKUs
+ * live here) → per-color admin config → built-in defaults.
+ */
+export function resolveShopbaseSku(
+  config: ShopbaseConfig,
+  id: string,
+  variantSkus?: Map<string, string> | Record<string, string>
+): string | undefined {
+  return (
+    (variantSkus instanceof Map
+      ? variantSkus.get(id)
+      : variantSkus?.[id]) ??
+    config.skus[id] ??
+    DEFAULT_SKUS[id]
+  );
+}
+
+/** Color/variant ids (from an order) that resolve to NO SKU anywhere. */
+export function findMissingSkus(
+  config: ShopbaseConfig,
+  ids: string[],
+  variantSkus?: Map<string, string> | Record<string, string>
+): string[] {
+  const out: string[] = [];
+  for (const id of new Set(ids)) {
+    const sku = resolveShopbaseSku(config, id, variantSkus);
+    if (!sku || !sku.trim()) out.push(id);
+  }
+  return out;
+}
+
+/**
  * Aggregate an order's color list into per-color checkout items.
- * SKU priority per color: live catalog variant SKU (extra map) → per-color
- * admin config → built-in defaults. Unknown colors are skipped — the caller
- * checks the result is non-empty before sending.
+ * Unknown colors are skipped — the caller checks the result is non-empty
+ * before sending.
  */
 export function buildItemsFromColors(
   config: ShopbaseConfig,
@@ -68,12 +99,7 @@ export function buildItemsFromColors(
   for (const c of colors) counts.set(c, (counts.get(c) ?? 0) + 1);
   const items: { sku: string; qty: number; price: number; size: string }[] = [];
   for (const [color, qty] of counts) {
-    const sku =
-      (variantSkus instanceof Map
-        ? variantSkus.get(color)
-        : variantSkus?.[color]) ??
-      config.skus[color] ??
-      DEFAULT_SKUS[color];
+    const sku = resolveShopbaseSku(config, color, variantSkus);
     if (!sku) continue;
     // Free-size product — ShopBase requires checkout_items[].size ("F" = Free).
     items.push({ sku, qty, price: perPiecePrice, size: "F" });
@@ -107,12 +133,7 @@ export function buildItemsFromLines(
       continue;
     }
     for (const color of l.colorIds ?? []) {
-      const sku =
-        (variantSkus instanceof Map
-          ? variantSkus.get(color)
-          : variantSkus?.[color]) ??
-        config.skus[color] ??
-        DEFAULT_SKUS[color];
+      const sku = resolveShopbaseSku(config, color, variantSkus);
       if (sku) add(sku, 1, l.price);
     }
   }

@@ -30,6 +30,7 @@ import type { LocationSelection } from "@/lib/bd-geo";
 import { AddressCascade } from "@/components/landing/address-cascade";
 import { LiveCountBadge } from "@/components/landing/live-count";
 import { pixelTrack } from "@/lib/pixel";
+import { pushPurchase } from "@/lib/gtm-data-layer";
 import { CheckCircle2, Flame, Loader2, Phone, ShieldCheck, Truck, ShoppingBag } from "lucide-react";
 
 /** Empty-DB fallback lines (static hooded swaddles, never priced wrong — server re-prices). */
@@ -272,6 +273,25 @@ export function OrderForm({
         ],
         order_id: data.orderCode,
       }, data.orderCode);
+      // GTM dataLayer purchase: customer phone (+ name) as variables.
+      // GTM → Variables → Data Layer Variable names: phone, customer_name,
+      // order via ecommerce.transaction_id / ecommerce.value. No-op without GTM.
+      pushPurchase({
+        transaction_id: data.orderCode,
+        value: data.totalPrice,
+        currency: "BDT",
+        phone: phone.replace(/\D+/g, ""),
+        customer_name: name.trim(),
+        items: picked.map((p) => ({
+          item_id:
+            p.line.shopbaseSku || p.line.variantId || p.line.productId,
+          item_name: p.line.variantLabel
+            ? `${p.line.name} (${p.line.variantLabel})`
+            : p.line.name,
+          price: perPiece,
+          quantity: p.qty,
+        })),
+      });
       toast({
         title: "🎉 অর্ডার সফল হয়েছে!",
         description: "আমাদের প্রতিনিধি শীঘ্রই কল করে কনফার্ম করবেন।",

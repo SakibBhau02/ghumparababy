@@ -4,12 +4,13 @@ import { isAdminRequest } from "@/lib/admin-auth";
 import {
   buildItemsFromColors,
   buildItemsFromLines,
+  findMissingSkus,
   getShopbaseConfig,
   placeShopbaseOrder,
 } from "@/lib/shopbase";
 import { orderItemsLabel, parseOrderItems } from "@/lib/catalog-shared";
 import { buildLabelMap, buildVariantSkuMap } from "@/lib/color-resolve";
-import { getActiveCatalogItems } from "@/lib/catalog";
+import { listCatalogItems } from "@/lib/catalog";
 import { getProductConfig } from "@/lib/product";
 import { isShopbaseReady } from "@/lib/shopbase-shared";
 import { getDeliveryConfig } from "@/lib/delivery";
@@ -62,9 +63,10 @@ export async function POST(req: NextRequest) {
     const lines = parseOrderItems(order.items);
     // Live catalog: new color variants (cuid ids) resolve their name + own
     // ShopBase SKU from here — the 4-color config table can't know them.
-    // Full list (incl. inactive) so old orders keep resolving after edits.
+    // FULL list (incl. inactive products/variants) so old orders keep
+    // resolving after catalog edits.
     const [catalogItems, productConfig] = await Promise.all([
-      getActiveCatalogItems().catch(() => []),
+      listCatalogItems().catch(() => []),
       getProductConfig().catch(() => null),
     ]);
     const labelMap = buildLabelMap(catalogItems, productConfig);
@@ -85,8 +87,26 @@ export async function POST(req: NextRequest) {
           )
         : buildItemsFromColors(config, colors, order.unitPrice, variantSkuMap);
     if (items.length === 0) {
+      // Name the exact variant(s) missing an SKU so the admin knows what
+      // to fill in the catalog (variant ShopBase SKU) — not a dead-end error.
+      const candidateIds = (
+        lines.length > 0
+          ? lines.flatMap((l) =>
+              l.shopbaseSku?.trim() ? [] : (l.colorIds ?? [])
+            )
+          : colors
+      ).filter(
+        (id): id is string => typeof id === "string" && id.trim().length > 0
+      );
+      const missing = findMissingSkus(config, candidateIds, variantSkuMap);
+      const names = missing.map((id) => labelMap[id] ?? id);
       return NextResponse.json(
-        { error: "এই অর্ডারের কালারের SKU পাওয়া যায়নি — SKU সেটিংস দেখুন।" },
+        {
+          error:
+            names.length > 0
+              ? `এই কালারের SKU পাওয়া যায়নি: ${names.join(", ")} — ক্যাটালগে ওই ভ্যারিয়েন্টের ShopBase SKU বসান।`
+              : "এই অর্ডারের কালারের SKU পাওয়া যায়নি — SKU সেটিংস দেখুন।",
+        },
         { status: 400 }
       );
     }

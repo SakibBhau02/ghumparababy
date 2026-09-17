@@ -17,6 +17,7 @@ import {
   sanitizeNewItems,
   splitOrderItems,
 } from "@/lib/catalog-shared";
+import { listCatalogItems } from "@/lib/catalog";
 
 const COLOR_IDS: string[] = PRODUCT_COLORS.map((c) => c.id);
 
@@ -174,10 +175,11 @@ async function handleOrderEdit(id: string, edit: unknown) {
   if (!cleanPhone) return bad(`সঠিক বাংলাদেশি মোবাইল নম্বর দিন। উদাহরণ: ${BD_PHONE_EXAMPLE}`);
   if (address.length < 10) return bad("সম্পূর্ণ ঠিকানা দিন (কমপক্ষে ১০ অক্ষর)।");
 
-  const [productConfig, deliveryConfig, locationEnabled] = await Promise.all([
+  const [productConfig, deliveryConfig, locationEnabled, catalogItems] = await Promise.all([
     getProductConfig(),
     getDeliveryConfig(),
     getLocationEnabled(),
+    listCatalogItems().catch(() => []),
   ]);
 
   const prev = await db.order.findUnique({ where: { id } });
@@ -198,9 +200,16 @@ async function handleOrderEdit(id: string, edit: unknown) {
   let picked: string[] = [];
   if (hasOldPart) {
     oldQty = Math.min(Math.max(Math.round(Number(e.qty ?? e.count)) || 1, 1), 30);
+    // Valid color ids: static legacy ids + EVERY live catalog variant id
+    // (the flagship product now has 7 cuid variants — the storefront already
+    // accepts them, so the edit validator must too).
+    const validColorIds = new Set<string>([
+      ...COLOR_IDS,
+      ...catalogItems.flatMap((i) => i.variants.map((v) => v.id)),
+    ]);
     picked = Array.isArray(e.colors)
       ? e.colors.filter(
-          (c): c is string => typeof c === "string" && COLOR_IDS.includes(c)
+          (c): c is string => typeof c === "string" && validColorIds.has(c)
         )
       : [];
     if (picked.length !== oldQty) {

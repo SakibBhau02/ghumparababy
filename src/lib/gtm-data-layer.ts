@@ -37,15 +37,21 @@ export function pushViewItem(data: {
   });
 }
 
-/** Push purchase event with order data */
+/** Push purchase event with order data (+ customer phone as a variable) */
 export function pushPurchase(data: {
   transaction_id: string;
   value: number;
   currency?: string;
+  /** Customer phone (digits) — GTM Data Layer Variable `phone`. */
+  phone?: string;
+  /** Customer name — GTM Data Layer Variable `customer_name`. */
+  customer_name?: string;
   items: { item_id: string; item_name: string; price: number; quantity: number }[];
 }) {
   pushToDataLayer({
     event: "purchase",
+    ...(data.phone ? { phone: data.phone } : {}),
+    ...(data.customer_name ? { customer_name: data.customer_name } : {}),
     ecommerce: {
       transaction_id: data.transaction_id,
       value: data.value,

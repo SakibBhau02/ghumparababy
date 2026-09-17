@@ -11,7 +11,9 @@ import Script from "next/script";
  * NEXT_PUBLIC_GTM_ID fallback হিসেবে থাকে (page.tsx সামলায়)।
  *
  * Events/dataLayer এই কম্পোনেন্ট fire করে না — সব ট্যাগ ও ট্রিগার
- * GTM panel (tagmanager.google.com) থেকে ম্যানেজ হয়।
+ * GTM panel (tagmanager.google.com) থেকে ম্যানেজ হয়। সাইট থেকে পাঠানো
+ * purchase ইভেন্ট (gtm-data-layer.ts → pushPurchase: ecommerce +
+ * top-level phone/customer_name) পড়তে Variables → Data Layer Variable বানান।
  */
 export function GtmLoader({ containerId }: { containerId: string }) {
   if (!containerId) return null;
