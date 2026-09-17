@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { toBn, PRODUCT_COLORS } from "@/lib/landing-data";
+import { toBn } from "@/lib/landing-data";
 import {
   codStats,
   parseTags,
@@ -42,6 +42,7 @@ type OrderRow = {
   status: string;
   colors: string;
   color: string;
+  shopbaseOrderId: string;
   createdAt: string | Date;
 };
 
@@ -87,26 +88,30 @@ function fmtDate(value: string | Date): string {
   });
 }
 
-function orderColorsLabel(o: OrderRow): string {
+function orderColorsLabel(o: OrderRow, labels?: Record<string, string> | null): string {
+  const labelOf = (id: string) => labels?.[id] ?? id;
   try {
     const arr = JSON.parse(o.colors) as unknown;
     if (Array.isArray(arr) && arr.length > 0) {
       return arr
-        .map((c) => PRODUCT_COLORS.find((p) => p.id === c)?.label ?? String(c))
+        .map((c) => labelOf(String(c)))
         .join(", ");
     }
   } catch {
     // fall through
   }
-  return PRODUCT_COLORS.find((p) => p.id === o.color)?.label ?? o.color;
+  return labelOf(o.color);
 }
 
 export function CustomerDetail({
   customer: initial,
-  orders,
+  orders: initialOrders,
+  colorLabels,
 }: {
   customer: CustomerRow;
   orders: OrderRow[];
+  /** Live variant id → Bangla label (server-built from catalog). */
+  colorLabels?: Record<string, string> | null;
 }) {
   const { toast } = useToast();
   const [customer, setCustomer] = useState<CustomerRow>(initial);
@@ -118,6 +123,37 @@ export function CustomerDetail({
   const [saving, setSaving] = useState(false);
   const [fraudResult, setFraudResult] = useState<FraudCheckResult | null>(null);
   const [fraudLoading, setFraudLoading] = useState(false);
+  const [orders, setOrders] = useState<OrderRow[]>(initialOrders);
+  const [pushingId, setPushingId] = useState<string | null>(null);
+
+  /** One-click ShopBase push from the profile page (same API as dashboard). */
+  const pushToShopbase = async (orderId: string) => {
+    setPushingId(orderId);
+    try {
+      const res = await fetch("/api/admin/shopbase/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        toast({
+          title: "ShopBase-এ যায়নি",
+          description: data?.error ?? "আবার চেষ্টা করুন।",
+          variant: "destructive",
+        });
+        return;
+      }
+      setOrders((cur) =>
+        cur.map((o) => (o.id === orderId ? { ...o, shopbaseOrderId: data?.shopbaseOrderId ?? "" } : o))
+      );
+      toast({ title: "ShopBase-এ অর্ডার গেছে ✓", description: `ShopBase ID: ${data?.shopbaseOrderId ?? ""}` });
+    } catch {
+      toast({ title: "নেটওয়ার্ক সমস্যা। আবার চেষ্টা করুন।", variant: "destructive" });
+    } finally {
+      setPushingId(null);
+    }
+  };
 
   const segment = segmentOf(customer);
   const seg = SEGMENTS[segment];
@@ -476,8 +512,16 @@ export function CustomerDetail({
                 >
                   <div className="min-w-0">
                     <span className="font-mono font-bold text-ink">{o.orderCode}</span>
+                    {o.shopbaseOrderId ? (
+                      <span
+                        title="ShopBase BD-তে পাঠানো হয়েছে"
+                        className="ml-2 rounded-lg bg-indigo-100 px-2 py-0.5 font-mono text-[11px] font-bold text-indigo-800"
+                      >
+                        🛍️ {o.shopbaseOrderId}
+                      </span>
+                    ) : null}
                     <span className="ml-2 text-muted-foreground">
-                      {o.packageName} • {orderColorsLabel(o)}
+                      {o.packageName} • {orderColorsLabel(o, colorLabels)}
                     </span>
                     <div className="text-xs text-muted-foreground">{fmtDate(o.createdAt)}</div>
                   </div>
@@ -490,6 +534,21 @@ export function CustomerDetail({
                     >
                       {STATUS_LABEL[o.status] ?? o.status}
                     </span>
+                    {!o.shopbaseOrderId ? (
+                      <button
+                        type="button"
+                        onClick={() => pushToShopbase(o.id)}
+                        disabled={pushingId === o.id}
+                        title="ShopBase BD-তে পাঠান"
+                        className="grid size-8 place-items-center rounded-full border border-border bg-white text-muted-foreground transition-colors hover:border-indigo-500 hover:text-indigo-600 disabled:opacity-60"
+                      >
+                        {pushingId === o.id ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <span className="text-sm">🛍️</span>
+                        )}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ))

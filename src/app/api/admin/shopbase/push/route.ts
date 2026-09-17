@@ -8,9 +8,11 @@ import {
   placeShopbaseOrder,
 } from "@/lib/shopbase";
 import { orderItemsLabel, parseOrderItems } from "@/lib/catalog-shared";
+import { buildLabelMap, buildVariantSkuMap } from "@/lib/color-resolve";
+import { getActiveCatalogItems } from "@/lib/catalog";
+import { getProductConfig } from "@/lib/product";
 import { isShopbaseReady } from "@/lib/shopbase-shared";
 import { getDeliveryConfig } from "@/lib/delivery";
-import { PRODUCT_COLORS } from "@/lib/landing-data";
 
 /**
  * POST /api/admin/shopbase/push — { orderId }
@@ -58,6 +60,15 @@ export async function POST(req: NextRequest) {
     if (colors.length === 0) colors = [order.color];
 
     const lines = parseOrderItems(order.items);
+    // Live catalog: new color variants (cuid ids) resolve their name + own
+    // ShopBase SKU from here — the 4-color config table can't know them.
+    // Full list (incl. inactive) so old orders keep resolving after edits.
+    const [catalogItems, productConfig] = await Promise.all([
+      getActiveCatalogItems().catch(() => []),
+      getProductConfig().catch(() => null),
+    ]);
+    const labelMap = buildLabelMap(catalogItems, productConfig);
+    const variantSkuMap = buildVariantSkuMap(catalogItems);
     // Mixed orders: per-line SKUs (new collection) + color-mapped legacy lines.
     // Pre-items orders: legacy color aggregation (unchanged behavior).
     const items =
@@ -69,9 +80,10 @@ export async function POST(req: NextRequest) {
               qty: l.qty,
               price: l.unitPrice,
               colorIds: l.colorIds,
-            }))
+            })),
+            variantSkuMap
           )
-        : buildItemsFromColors(config, colors, order.unitPrice);
+        : buildItemsFromColors(config, colors, order.unitPrice, variantSkuMap);
     if (items.length === 0) {
       return NextResponse.json(
         { error: "এই অর্ডারের কালারের SKU পাওয়া যায়নি — SKU সেটিংস দেখুন।" },
@@ -82,13 +94,20 @@ export async function POST(req: NextRequest) {
     const deliveryConfig = await getDeliveryConfig();
     const zoneLabel =
       deliveryConfig.zones.find((z) => z.id === order.deliveryZone)?.label ?? "";
-    const colorLabels = colors
-      .map((id) => PRODUCT_COLORS.find((c) => c.id === id)?.label ?? id)
-      .join(", ");
+    // Live-catalog labels — never a raw cuid in the ShopBase note.
+    const colorLabels = colors.map((id) => labelMap[id] ?? id).join(", ");
 
     const address = [order.address, order.upazila, order.district, order.division]
       .filter((s) => s && s.trim().length > 0)
       .join(", ");
+
+    // Customer's own district first — "Dhaka" is only the last-resort
+    // fallback ShopBase requires (never override a real customer district).
+    const district =
+      order.district?.trim() ||
+      order.upazila?.trim() ||
+      order.division?.trim() ||
+      "Dhaka";
 
     const colorPart = colorLabels.length > 0 ? ` (${colorLabels})` : "";
     const itemsPart = lines.length > 0 ? ` • ${orderItemsLabel(lines)}` : "";
@@ -97,7 +116,7 @@ export async function POST(req: NextRequest) {
       invoiceId: order.orderCode,
       customerName: order.name,
       phone: order.phone,
-      district: order.district || order.division || "Dhaka",
+      district,
       shippingAddress: address,
       orderNote: `${order.packageName}${colorPart}${itemsPart}${zoneLabel ? ` • ${zoneLabel}` : ""}${
         order.adminNote ? ` • ${order.adminNote.slice(0, 80)}` : ""

@@ -69,6 +69,7 @@ export function OrderEditModal({
   zones,
   locationEnabled,
   mode = "edit",
+  colorOptions,
   onClose,
   onSaved,
   onShopbaseSent,
@@ -79,6 +80,8 @@ export function OrderEditModal({
   locationEnabled: boolean;
   /** "edit" = save only; "shopbase" = save then push to ShopBase BD. */
   mode?: "edit" | "shopbase";
+  /** Live flagship color choices (cuid variants included) — falls back to statics. */
+  colorOptions?: { id: string; label: string }[];
   onClose: () => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onSaved: (updated: any) => void;
@@ -127,14 +130,22 @@ export function OrderEditModal({
   const charge = needsZone ? (isFreeShipping(totalItems) ? 0 : zoneCharge({ zones }, zone)) : 0;
   const previewTotal = itemsTotal + charge;
 
+  // Live color choices (new cuid variants included) — static 4 as fallback.
+  const colorChoices =
+    colorOptions && colorOptions.length > 0
+      ? colorOptions
+      : PRODUCT_COLORS.map((c) => ({ id: c.id, label: c.label }));
+
   // Keep one color slot per LEGACY item (extra-catalog lines are fixed).
   useEffect(() => {
     if (!hasOldPart) return;
     setColors((cur) => {
+      const fallback = colorChoices[0]?.id ?? "pink";
       if (cur.length === qty) return cur;
       if (cur.length > qty) return cur.slice(0, qty);
-      return [...cur, ...Array<string>(qty - cur.length).fill("pink")];
+      return [...cur, ...Array<string>(qty - cur.length).fill(fallback)];
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qty, hasOldPart]);
 
   const save = async () => {
@@ -280,13 +291,18 @@ export function OrderEditModal({
                     <div key={i}>
                       <span className="text-xs text-muted-foreground">{toBn(i + 1)} নং</span>
                       <select
-                        value={col}
+                        value={colorChoices.some((c) => c.id === col) ? col : ""}
                         onChange={(e) =>
                           setColors((cur) => cur.map((v, j) => (j === i ? e.target.value : v)))
                         }
                         className={`${inputCls} mt-0.5 h-10 text-sm`}
                       >
-                        {PRODUCT_COLORS.map((c) => (
+                        {!colorChoices.some((c) => c.id === col) && (
+                          <option value="" disabled>
+                            {col} (মুছে ফেলা কালার)
+                          </option>
+                        )}
+                        {colorChoices.map((c) => (
                           <option key={c.id} value={c.id}>
                             {c.label}
                           </option>

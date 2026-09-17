@@ -13,7 +13,12 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { PRODUCT_COLORS, toBn } from "@/lib/landing-data";
-import { parseOrderItems } from "@/lib/catalog-shared";
+import { parseOrderItems, MAIN_PRODUCT_ID, type CatalogItem } from "@/lib/catalog-shared";
+import {
+  buildColorMap,
+  colorLabelsForOrder,
+  type ColorMeta,
+} from "@/lib/color-resolve";
 import { zoneCharge, isAllFree, type DeliveryConfig } from "@/lib/delivery-shared";
 import {
   DEFAULT_TIERS,
@@ -43,6 +48,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { OrderEditModal } from "@/components/admin/order-edit-modal";
+import { OrderDetailModal } from "@/components/admin/order-detail-modal";
 import { SettingsGroup } from "@/components/admin/settings-group";
 import {
   Activity,
@@ -51,6 +57,7 @@ import {
   Clock,
   Copy,
   Download,
+  Eye,
   ImageIcon,
   MapPin,
   MessageCircle,
@@ -170,7 +177,8 @@ function formatDate(value: string | Date): string {
   return `${toBn(d.getDate())} ${BN_MONTHS[d.getMonth()]} ${toBn(d.getFullYear())}, ${period} ${toBn(h12)}:${toBn(Number(mm))}`;
 }
 
-function colorLabel(id: string): string {
+/** Legacy static lookup — only for places without catalog access. Prefer colorMap. */
+function staticColorLabel(id: string): string {
   return PRODUCT_COLORS.find((c) => c.id === id)?.label ?? id;
 }
 
@@ -209,17 +217,18 @@ function TgLink({ href, children }: { href: string; children: string }) {
   );
 }
 
-/** All chosen colors, joined (falls back to the legacy single color). */
-function orderColors(o: OrderLike): string {
+/** All chosen colors, joined — live catalog map first, static fallback. */
+function orderColors(o: OrderLike, map?: Map<string, ColorMeta> | null): string {
+  if (map) return colorLabelsForOrder(o, map);
   try {
     const arr = JSON.parse(o.colors) as unknown;
     if (Array.isArray(arr) && arr.length > 0) {
-      return arr.map((c) => colorLabel(String(c))).join(", ");
+      return arr.map((c) => staticColorLabel(String(c))).join(", ");
     }
   } catch {
     // fall through to legacy color
   }
-  return colorLabel(o.color);
+  return staticColorLabel(o.color);
 }
 
 export function AdminDashboard({
@@ -235,6 +244,7 @@ export function AdminDashboard({
   fraud: initialFraud,
   customers: initialCustomers,
   initialTab,
+  catalogItems: initialCatalogItems = [],
 }: {
   initialOrders: OrderLike[];
   deliveryConfig: DeliveryConfig;
@@ -248,6 +258,8 @@ export function AdminDashboard({
   fraud: FraudConfig;
   customers: CustomerLike[];
   initialTab?: string;
+  /** Full catalog (incl. inactive) — resolves color names + line photos. */
+  catalogItems?: CatalogItem[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -307,6 +319,8 @@ export function AdminDashboard({
   const [filter, setFilter] = useState<string>("all");
   const [editingOrder, setEditingOrder] = useState<OrderLike | null>(null);
   const [shopbaseOrder, setShopbaseOrder] = useState<OrderLike | null>(null);
+  const [detailOrder, setDetailOrder] = useState<OrderLike | null>(null);
+  const [bulkSb, setBulkSb] = useState<{ done: number; total: number } | null>(null);
   const [deleteArm, setDeleteArm] = useState<string | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -316,6 +330,23 @@ export function AdminDashboard({
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
   const [fraudMap, setFraudMap] = useState<Record<string, FraudCheckResult>>({});
   const fraudMapRef = useRef<Set<string>>(new Set());
+
+  // Live color lookup: catalog variants → admin color list → static defaults.
+  // Fixes cuid codes (cmu…) showing instead of Bangla color names.
+  const colorMap = useMemo(
+    () => buildColorMap(initialCatalogItems, products),
+    [initialCatalogItems, products]
+  );
+  // Legacy ঘুমপাড়া color choices for the edit modal (main product variants).
+  const mainColorOptions = useMemo(() => {
+    const main = initialCatalogItems.find((i) => i.id === MAIN_PRODUCT_ID);
+    const opts = (main?.variants ?? [])
+      .filter((v) => v.active)
+      .map((v) => ({ id: v.id, label: v.label || v.name }));
+    return opts.length > 0
+      ? opts
+      : PRODUCT_COLORS.map((c) => ({ id: c.id, label: c.label }));
+  }, [initialCatalogItems]);
 
   // Auto fraud badges: when enabled, bulk-check the newest order phones once
   // (12h server cache makes repeat visits free; max 20 phones per sweep).
@@ -463,8 +494,58 @@ export function AdminDashboard({
     window.open(`/admin/print?ids=${selectedIds.join(",")}&per=${per}`, "_blank");
   };
 
-  const handleDelete = async (id: string) => {
-    if (deleteArm !== id) {
+  /** Bulk push: every selected order without a ShopBase ID, one by one. */
+  const bulkPushShopbase = async () => {
+    const targets = orders.filter((o) => selectedIds.includes(o.id) && !o.shopbaseOrderId);
+    if (targets.length === 0) {
+      toast({
+        title: "পাঠানোর মতো অর্ডার নেই",
+        description: "সিলেক্ট করা অর্ডারগুলো ইতিমধ্যে ShopBase-এ গেছে।",
+      });
+      return;
+    }
+    setBulkSb({ done: 0, total: targets.length });
+    let ok = 0;
+    let fail = 0;
+    const sbMap = new Map<string, string>();
+    for (const t of targets) {
+      try {
+        const res = await fetch("/api/admin/shopbase/push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: t.id }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok) {
+          ok++;
+          sbMap.set(t.id, data?.shopbaseOrderId ?? "");
+        } else {
+          fail++;
+        }
+      } catch {
+        fail++;
+      }
+      setBulkSb({ done: ok + fail, total: targets.length });
+    }
+    if (sbMap.size > 0) {
+      setOrders((cur) =>
+        cur.map((x) => (sbMap.has(x.id) ? { ...x, shopbaseOrderId: sbMap.get(x.id) ?? "" } : x))
+      );
+    }
+    setBulkSb(null);
+    toast({
+      title:
+        fail === 0
+          ? `ShopBase-এ ${toBn(ok)}টা অর্ডার গেছে ✓`
+          : `ShopBase: ${toBn(ok)}টা গেছে ✓, ${toBn(fail)}টা যায়নি`,
+      description:
+        fail > 0 ? "যেগুলো যায়নি — SKU/error দেখতে একটা একটা করে বাটনে চাপুন।" : undefined,
+      variant: fail > 0 ? "destructive" : undefined,
+    });
+  };
+
+  const handleDelete = async (id: string, force = false) => {
+    if (!force && deleteArm !== id) {
       setDeleteArm(id);
       setTimeout(() => {
         setDeleteArm((cur) => (cur === id ? null : cur));
@@ -1876,6 +1957,21 @@ export function AdminDashboard({
               >
                 পেজে ৬টা প্রিন্ট
               </Button>
+              <Button
+                size="sm"
+                disabled={selectedIds.length === 0 || bulkSb !== null}
+                onClick={bulkPushShopbase}
+                className="rounded-full bg-indigo-600 font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {bulkSb ? (
+                  <>
+                    <RefreshCw className="mr-1 inline size-3.5 animate-spin" />
+                    {toBn(bulkSb.done)}/{toBn(bulkSb.total)}
+                  </>
+                ) : (
+                  <>🛍️ ShopBase-এ পাঠান</>
+                )}
+              </Button>
             </div>
           </div>
         )}
@@ -2007,9 +2103,14 @@ export function AdminDashboard({
                     </div>
 
                     <div className="flex flex-col items-start gap-3 sm:items-end">
-                      <div className="text-right">
+                      <button
+                        type="button"
+                        onClick={() => setDetailOrder(o)}
+                        title="বিস্তারিত দেখুন"
+                        className="rounded-xl text-right transition-colors hover:bg-cream/60"
+                      >
                         <div className="text-sm text-muted-foreground">
-                          {orderColors(o)} • {o.packageName} • {toBn(o.quantity)}টি
+                          {orderColors(o, colorMap)} • {o.packageName} • {toBn(o.quantity)}টি
                         </div>
                         {(() => {
                           const lines = parseOrderItems(o.items);
@@ -2034,7 +2135,10 @@ export function AdminDashboard({
                           {o.deliveryCharge > 0 ? ` + ডেলিভারি ৳${toBn(o.deliveryCharge)}` : " + ডেলিভারি ফ্রি"}
                         </div>
                         <div className="text-xl font-bold text-brand">৳{toBn(o.totalPrice)}</div>
-                      </div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-brand">
+                          👁️ বিস্তারিত দেখুন
+                        </div>
+                      </button>
                       <Select
                         value={o.status}
                         onValueChange={(v) => updateStatus(o.id, v)}
@@ -2052,6 +2156,13 @@ export function AdminDashboard({
                         </SelectContent>
                       </Select>
                       <div className="flex gap-1.5">
+                        <button
+                          onClick={() => setDetailOrder(o)}
+                          title="বিস্তারিত দেখুন"
+                          className="grid size-9 place-items-center rounded-full border border-brand bg-brand-soft/50 text-brand transition-colors hover:bg-brand hover:text-white"
+                        >
+                          <Eye className="size-4" />
+                        </button>
                         <button
                           onClick={() => setEditingOrder(o)}
                           title="অর্ডার এডিট"
@@ -2135,6 +2246,7 @@ export function AdminDashboard({
             products={products}
             zones={config.zones}
             locationEnabled={locOn}
+            colorOptions={mainColorOptions}
             onClose={() => setEditingOrder(null)}
             onSaved={(updated) => {
               setOrders((cur) => cur.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)));
@@ -2150,6 +2262,7 @@ export function AdminDashboard({
             zones={config.zones}
             locationEnabled={locOn}
             mode="shopbase"
+            colorOptions={mainColorOptions}
             onClose={() => setShopbaseOrder(null)}
             onSaved={(updated) => {
               setOrders((cur) => cur.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)));
@@ -2165,6 +2278,43 @@ export function AdminDashboard({
                 title: "ShopBase-এ অর্ডার গেছে ✓",
                 description: `ShopBase ID: ${sbId}`,
               });
+            }}
+          />
+        )}
+        {detailOrder && (
+          <OrderDetailModal
+            order={orders.find((o) => o.id === detailOrder.id) ?? detailOrder}
+            colorMap={colorMap}
+            catalogItems={initialCatalogItems}
+            zoneLabel={
+              config.zones.find((z) => z.id === detailOrder.deliveryZone)?.label ?? ""
+            }
+            statusOptions={STATUS_ORDER.map((s) => ({ value: s, label: STATUS_META[s].label }))}
+            statusMeta={
+              STATUS_META[detailOrder.status] ?? STATUS_META.pending
+            }
+            statusBusy={updatingId === detailOrder.id}
+            courierBusy={sendingSfId === detailOrder.id}
+            canCourier={!detailOrder.consignmentId}
+            canShopbase={!detailOrder.shopbaseOrderId}
+            onClose={() => setDetailOrder(null)}
+            onStatusChange={(v) => {
+              updateStatus(detailOrder.id, v);
+              setDetailOrder((cur) => (cur ? { ...cur, status: v } : cur));
+            }}
+            onEdit={() => {
+              setEditingOrder(detailOrder);
+              setDetailOrder(null);
+            }}
+            onPrint={() => window.open(`/admin/print?ids=${detailOrder.id}&per=2`, "_blank")}
+            onCourier={() => sendToCourier(detailOrder.id)}
+            onShopbase={() => {
+              setShopbaseOrder(detailOrder);
+              setDetailOrder(null);
+            }}
+            onDelete={() => {
+              handleDelete(detailOrder.id, true);
+              setDetailOrder(null);
             }}
           />
         )}

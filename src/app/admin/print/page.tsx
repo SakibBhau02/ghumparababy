@@ -11,7 +11,15 @@ import {
   getCatalogProduct,
   parseOrderItems,
   skuLabelForMixed,
+  type CatalogItem,
 } from "@/lib/catalog-shared";
+import {
+  buildColorMap,
+  resolveColorMeta,
+  resolveLineImage,
+  type ColorMeta,
+} from "@/lib/color-resolve";
+import { listCatalogItems } from "@/lib/catalog";
 import { PRODUCT_COLORS, toBn, HOTLINE } from "@/lib/landing-data";
 import { siteImage } from "@/lib/site-images";
 import { PrintButton } from "@/components/admin/print-button";
@@ -44,13 +52,21 @@ function colorIds(order: Order): string[] {
   return [order.color];
 }
 
-function colorMeta(id: string): { label: string; hex: string } {
+function colorMeta(id: string, map?: Map<string, ColorMeta> | null): { label: string; hex: string } {
+  if (map) {
+    const m = resolveColorMeta(map, id);
+    return { label: m.label, hex: m.hex };
+  }
   const found = PRODUCT_COLORS.find((c) => c.id === id);
   return { label: found?.label ?? id, hex: found?.hex ?? "#CCCCCC" };
 }
 
-function productImage(order: Order): string {
+function productImage(order: Order, map?: Map<string, ColorMeta> | null): string {
   const first = colorIds(order)[0] ?? order.color;
+  if (map) {
+    const img = map.get(first)?.image;
+    if (img) return img;
+  }
   const rel = PRODUCT_COLORS.find((c) => c.id === first)?.image ?? "/images/swaddle-pink.jpg";
   return siteImage(rel);
 }
@@ -66,6 +82,8 @@ function Invoice({
   compact,
   sku,
   productConfig,
+  catalogItems,
+  colorMap,
 }: {
   order: Order;
   zoneLabel: string;
@@ -73,6 +91,8 @@ function Invoice({
   compact: boolean;
   sku: string;
   productConfig: ProductConfig;
+  catalogItems: CatalogItem[];
+  colorMap: Map<string, ColorMeta>;
 }) {
   const colors = colorIds(order);
   const loc = locationLine(order);
@@ -157,7 +177,7 @@ function Invoice({
                         className={`relative block shrink-0 overflow-hidden rounded-md border border-border ${compact ? "size-9" : "size-12"}`}
                       >
                         <Image
-                          src={productImage(order)}
+                          src={productImage(order, colorMap)}
                           alt="সোয়াডেল"
                           fill
                           className="object-cover"
@@ -176,7 +196,7 @@ function Invoice({
                         </span>
                         <span className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
                           {colors.map((id, i) => {
-                            const meta = colorMeta(id);
+                            const meta = colorMeta(id, colorMap);
                             return (
                               <span key={`${id}-${i}`} className="inline-flex items-center gap-1">
                                 <span
@@ -205,8 +225,11 @@ function Invoice({
             return (
               <>
                 {lines.map((l, i) => {
-                  const cat = getCatalogProduct(l.productId);
-                  const img = cat?.image ?? productImage(order);
+                  // Live catalog photo first (variant match → product photo),
+                  // static fallback only for the old hardcoded ids.
+                  const liveImg = resolveLineImage(l, catalogItems, colorMap);
+                  const cat = liveImg ? null : getCatalogProduct(l.productId);
+                  const img = liveImg || cat?.image || productImage(order, colorMap);
                   const lineSku = l.shopbaseSku
                     ? `${l.shopbaseSku} ×${l.qty}`
                     : skusForOrder(productConfig, l.qty, l.colorIds ?? []).join(", ");
@@ -294,11 +317,13 @@ export default async function PrintPage({
     redirect("/admin");
   }
 
-  const [orders, deliveryConfig, productConfig] = await Promise.all([
+  const [orders, deliveryConfig, productConfig, catalogItems] = await Promise.all([
     db.order.findMany({ where: { id: { in: ids } } }),
     getDeliveryConfig(),
     getProductConfig(),
+    listCatalogItems().catch(() => []),
   ]);
+  const colorMap = buildColorMap(catalogItems, productConfig);
   const byId = new Map(orders.map((o) => [o.id, o]));
   const list = ids
     .map((id) => byId.get(id))
@@ -369,7 +394,7 @@ export default async function PrintPage({
       >
         {list.map((o) => (
           <div key={o.id} className={per === 6 ? "invoice-6up" : per === 4 ? "invoice-4up" : "invoice-2up"}>
-            <Invoice order={o} zoneLabel={zoneName(o.deliveryZone)} zoneNote={zoneNote(o.deliveryZone)} compact={per !== 2} sku={skuLabelForMixed(productConfig, o.quantity, colorIds(o), o.items)} productConfig={productConfig} />
+            <Invoice order={o} zoneLabel={zoneName(o.deliveryZone)} zoneNote={zoneNote(o.deliveryZone)} compact={per !== 2} sku={skuLabelForMixed(productConfig, o.quantity, colorIds(o), o.items)} productConfig={productConfig} catalogItems={catalogItems} colorMap={colorMap} />
           </div>
         ))}
       </div>

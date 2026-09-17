@@ -11,6 +11,7 @@ import { getSteadfastConfig } from "@/lib/steadfast";
 import { getShopbaseConfig } from "@/lib/shopbase";
 import { getManyDialConfig } from "@/lib/manydial";
 import { getFraudConfig } from "@/lib/courier-fraud";
+import { listCatalogItems } from "@/lib/catalog";
 import { AdminDashboard } from "@/components/admin/dashboard";
 import type { Order } from "@prisma/client";
 
@@ -46,10 +47,12 @@ export default async function AdminPage({
         manydial: Awaited<ReturnType<typeof getManyDialConfig>>;
         fraud: Awaited<ReturnType<typeof getFraudConfig>>;
         customers: Awaited<ReturnType<typeof db.customer.findMany>>;
+        /** Full catalog (incl. inactive) — order cards resolve color names + photos. */
+        catalogItems: Awaited<ReturnType<typeof listCatalogItems>>;
       }
     | null = null;
   try {
-    const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp, telegram, steadfast, shopbase, manydial, fraud, customers] =
+    const [orders, deliveryConfig, productConfig, locationEnabled, whatsapp, telegram, steadfast, shopbase, manydial, fraud, customers, catalogItems] =
       await Promise.all([
         db.order.findMany({ orderBy: [{ pinned: "desc" }, { createdAt: "desc" }] }),
         getDeliveryConfig(),
@@ -62,6 +65,7 @@ export default async function AdminPage({
         getManyDialConfig(),
         getFraudConfig(),
         db.customer.findMany({ orderBy: { lastOrderAt: "desc" } }),
+        listCatalogItems(),
       ]);
     loaded = {
       orders,
@@ -75,6 +79,7 @@ export default async function AdminPage({
       manydial,
       fraud,
       customers,
+      catalogItems,
     };
   } catch {
     loaded = null;
@@ -97,6 +102,7 @@ export default async function AdminPage({
       manydial={loaded.manydial}
       fraud={loaded.fraud}
       customers={loaded.customers}
+      catalogItems={loaded.catalogItems}
     />
   );
 }

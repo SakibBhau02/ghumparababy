@@ -54,19 +54,26 @@ export type SbResult =
 
 /**
  * Aggregate an order's color list into per-color checkout items.
- * Unknown colors (legacy orders) are skipped — the caller checks the result
- * is non-empty before sending.
+ * SKU priority per color: live catalog variant SKU (extra map) → per-color
+ * admin config → built-in defaults. Unknown colors are skipped — the caller
+ * checks the result is non-empty before sending.
  */
 export function buildItemsFromColors(
   config: ShopbaseConfig,
   colors: string[],
-  perPiecePrice: number
+  perPiecePrice: number,
+  variantSkus?: Map<string, string> | Record<string, string>
 ): { sku: string; qty: number; price: number; size: string }[] {
   const counts = new Map<string, number>();
   for (const c of colors) counts.set(c, (counts.get(c) ?? 0) + 1);
   const items: { sku: string; qty: number; price: number; size: string }[] = [];
   for (const [color, qty] of counts) {
-    const sku = config.skus[color] ?? DEFAULT_SKUS[color];
+    const sku =
+      (variantSkus instanceof Map
+        ? variantSkus.get(color)
+        : variantSkus?.[color]) ??
+      config.skus[color] ??
+      DEFAULT_SKUS[color];
     if (!sku) continue;
     // Free-size product — ShopBase requires checkout_items[].size ("F" = Free).
     items.push({ sku, qty, price: perPiecePrice, size: "F" });
@@ -77,12 +84,14 @@ export function buildItemsFromColors(
 /**
  * Build checkout items from stored order lines (mixed orders).
  * Lines with their own shopbaseSku (new collection) go as-is;
- * legacy-product lines map their colorIds through the per-color config.
- * Unknown colors are skipped — the caller checks non-empty before sending.
+ * legacy-product lines map their colorIds through the variant SKU map first,
+ * then the per-color config. Unknown colors are skipped — the caller checks
+ * non-empty before sending.
  */
 export function buildItemsFromLines(
   config: ShopbaseConfig,
-  lines: { shopbaseSku?: string; qty: number; price: number; colorIds?: string[] }[]
+  lines: { shopbaseSku?: string; qty: number; price: number; colorIds?: string[] }[],
+  variantSkus?: Map<string, string> | Record<string, string>
 ): { sku: string; qty: number; price: number }[] {
   const bySku = new Map<string, { qty: number; price: number }>();
   const add = (sku: string, qty: number, price: number) => {
@@ -98,7 +107,12 @@ export function buildItemsFromLines(
       continue;
     }
     for (const color of l.colorIds ?? []) {
-      const sku = config.skus[color] ?? DEFAULT_SKUS[color];
+      const sku =
+        (variantSkus instanceof Map
+          ? variantSkus.get(color)
+          : variantSkus?.[color]) ??
+        config.skus[color] ??
+        DEFAULT_SKUS[color];
       if (sku) add(sku, 1, l.price);
     }
   }

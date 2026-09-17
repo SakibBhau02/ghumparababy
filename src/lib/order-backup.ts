@@ -77,12 +77,12 @@ function csvEscape(value: unknown): string {
 }
 
 /** JSON color-id array → joined Bangla labels (for CSV export). */
-export function colorLabels(raw: unknown): string {  try {
+export function colorLabels(raw: unknown, labelMap?: Record<string, string> | null): string {  try {
     const arr = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
     if (!Array.isArray(arr)) return "";
     return arr
       .filter((c): c is string => typeof c === "string")
-      .map((c) => PRODUCT_COLORS.find((p) => p.id === c)?.label ?? c)
+      .map((c) => labelMap?.[c] ?? PRODUCT_COLORS.find((p) => p.id === c)?.label ?? c)
       .join(", ");
   } catch {
     return "";
@@ -105,7 +105,9 @@ export function orderColorIds(o: { colors: string; color: string }): string[] {
 export function ordersToCsv(
   orders: BackupOrder[],
   /** Optional SKU resolver (live product config থেকে) — না দিলে sku কলাম খালি থাকবে। */
-  getSku?: (o: BackupOrder) => string
+  getSku?: (o: BackupOrder) => string,
+  /** Optional live variant id → Bangla label (না দিলে static ৪ কালার)। */
+  labelMap?: Record<string, string> | null
 ): string {
   const lines = [CSV_HEADERS.join(",")];
   for (const o of orders) {
@@ -125,7 +127,7 @@ export function ordersToCsv(
         o.district ?? "",
         o.upazila ?? "",
         o.color,
-        colorLabels(o.colors),
+        colorLabels(o.colors, labelMap),
         o.packageName,
         sku,
         o.quantity,

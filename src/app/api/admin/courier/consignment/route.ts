@@ -10,7 +10,8 @@ import {
   parseOrderItems,
   skuLabelForMixed,
 } from "@/lib/catalog-shared";
-import { PRODUCT_COLORS } from "@/lib/landing-data";
+import { buildLabelMap } from "@/lib/color-resolve";
+import { getActiveCatalogItems } from "@/lib/catalog";
 
 /**
  * POST /api/admin/courier/consignment — { orderId }
@@ -49,7 +50,8 @@ export async function POST(req: NextRequest) {
 
     const deliveryConfig = await getDeliveryConfig();
     const zoneLabel =
-      deliveryConfig.zones.find((z) => z.id === order.deliveryZone)?.label ?? "";    let colors: string[] = [];
+      deliveryConfig.zones.find((z) => z.id === order.deliveryZone)?.label ?? "";
+    let colors: string[] = [];
     try {
       const parsed = JSON.parse(order.colors) as unknown;
       if (Array.isArray(parsed)) {
@@ -58,15 +60,19 @@ export async function POST(req: NextRequest) {
     } catch {
       colors = [order.color];
     }
-    const colorLabels = colors.map(
-      (id) => PRODUCT_COLORS.find((c) => c.id === id)?.label ?? id
+
+    const productConfig = await getProductConfig();
+    // Live catalog labels — Steadfast parcel description never shows a cuid.
+    const labelMap = buildLabelMap(
+      await getActiveCatalogItems().catch(() => []),
+      productConfig
     );
+    const colorLabels = colors.map((id) => labelMap[id] ?? id);
 
     const address = [order.address, order.upazila, order.district, order.division]
       .filter((s) => s && s.trim().length > 0)
       .join(", ");
 
-    const productConfig = await getProductConfig();
     const lines = parseOrderItems(order.items);
     const sku = skuLabelForMixed(productConfig, order.quantity, colors, order.items);
     const itemDescription =

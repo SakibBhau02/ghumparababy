@@ -3,6 +3,8 @@ import { isAdminRequest } from "@/lib/admin-auth";
 import { mergedOrders, orderColorIds, ordersToCsv } from "@/lib/order-backup";
 import { getProductConfig } from "@/lib/product";
 import { skuLabelForMixed } from "@/lib/catalog-shared";
+import { buildLabelMap } from "@/lib/color-resolve";
+import { getActiveCatalogItems } from "@/lib/catalog";
 
 /**
  * GET /api/admin/orders/export — download every order as CSV.
@@ -18,12 +20,15 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const [orders, productConfig] = await Promise.all([
+  const [orders, productConfig, catalogItems] = await Promise.all([
     mergedOrders(),
     getProductConfig(),
+    getActiveCatalogItems().catch(() => []),
   ]);
-  const csv = ordersToCsv(orders, (o) =>
-    skuLabelForMixed(productConfig, o.quantity, orderColorIds(o), o.items)
+  const csv = ordersToCsv(
+    orders,
+    (o) => skuLabelForMixed(productConfig, o.quantity, orderColorIds(o), o.items),
+    buildLabelMap(catalogItems, productConfig)
   );
 
   const now = new Date();

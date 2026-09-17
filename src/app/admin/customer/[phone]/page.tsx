@@ -3,6 +3,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { ADMIN_COOKIE, verifyToken } from "@/lib/admin-auth";
+import { listCatalogItems } from "@/lib/catalog";
+import { getProductConfig } from "@/lib/product";
+import { buildLabelMap } from "@/lib/color-resolve";
 import { CustomerDetail } from "@/components/admin/customer-detail";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +59,19 @@ export default async function CustomerPage({
       orderBy: { createdAt: "desc" },
     });
 
-    return <CustomerDetail customer={customer} orders={orders} />;
+    // Live catalog labels so new color variants show Bangla names (not cuids).
+    const [catalogItems, productConfig] = await Promise.all([
+      listCatalogItems().catch(() => []),
+      getProductConfig().catch(() => null),
+    ]);
+
+    return (
+      <CustomerDetail
+        customer={customer}
+        orders={orders}
+        colorLabels={buildLabelMap(catalogItems, productConfig)}
+      />
+    );
   } catch {
     return (
       <main className="grid min-h-screen place-items-center bg-cream/60 px-4">

@@ -25,6 +25,7 @@ import {
   sanitizeNewItems,
   skuLabelForMixed,
 } from "@/lib/catalog-shared";
+import { buildLabelMap } from "@/lib/color-resolve";
 import { BD_PHONE_EXAMPLE, normalizeBdPhone } from "@/lib/phone-shared";
 import { HOTLINE } from "@/lib/landing-data";
 import { getFraudConfig, warmFraudCache } from "@/lib/courier-fraud";
@@ -327,6 +328,12 @@ export async function POST(req: NextRequest) {
         }
         const zoneLabel =
           deliveryConfig.zones.find((z) => z.id === deliveryZone)?.label ?? deliveryZone;
+        // Resolve variant ids → Bangla labels (live catalog first) so the
+        // Telegram alert never shows a raw cuid for new colors.
+        const tgLabelMap = buildLabelMap(
+          [...catalogItems, ...(mainProduct ? [mainProduct] : [])],
+          productConfig
+        );
         const newBits = computed.items
           .filter((l) => l.productId !== "ghumpara")
           .map((l) => `${l.name} (${l.variant}) ×${l.qty}`);
@@ -339,7 +346,7 @@ export async function POST(req: NextRequest) {
           district: order.district,
           upazila: order.upazila,
           packageName: order.packageName,
-          colors: alertColors,
+          colors: alertColors.map((c) => tgLabelMap[c] ?? c),
           quantity: order.quantity,
           unitPrice: order.unitPrice,
           deliveryZoneLabel: zoneLabel,
