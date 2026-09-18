@@ -11,6 +11,8 @@ import {
 import { orderItemsLabel, parseOrderItems } from "@/lib/catalog-shared";
 import { buildLabelMap, buildVariantSkuMap } from "@/lib/color-resolve";
 import { listCatalogItems } from "@/lib/catalog";
+import { guessLocationFromAddress } from "@/lib/bd-geo";
+import { loadBdGeo } from "@/lib/bd-geo-server";
 import { getProductConfig } from "@/lib/product";
 import { isShopbaseReady } from "@/lib/shopbase-shared";
 import { getDeliveryConfig } from "@/lib/delivery";
@@ -121,10 +123,18 @@ export async function POST(req: NextRequest) {
       .filter((s) => s && s.trim().length > 0)
       .join(", ");
 
-    // Customer's own district first — "Dhaka" is only the last-resort
-    // fallback ShopBase requires (never override a real customer district).
+    // Customer's own district first. The location block is often OFF, so
+    // stored district is empty — guess it from the typed address text
+    // (e.g. "…Sylhet…" → সিলেট) before the "Dhaka" last resort, which
+    // ShopBase requires as a non-empty value.
+    const geo = await loadBdGeo().catch(() => []);
+    const guessed = guessLocationFromAddress(
+      [order.address, order.upazila, order.division].filter(Boolean).join(", "),
+      geo
+    );
     const district =
       order.district?.trim() ||
+      guessed?.district ||
       order.upazila?.trim() ||
       order.division?.trim() ||
       "Dhaka";

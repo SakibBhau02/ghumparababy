@@ -23,6 +23,7 @@ import { parseOrderItems, splitOrderItems } from "@/lib/catalog-shared";
 import { zoneCharge, type DeliveryZone } from "@/lib/delivery-shared";
 import { AddressCascade } from "@/components/landing/address-cascade";
 import type { LocationSelection } from "@/lib/bd-geo";
+import { guessLocationFromAddress, type BdDivision } from "@/lib/bd-geo";
 import { Loader2 } from "lucide-react";
 
 export type EditableOrder = {
@@ -115,6 +116,29 @@ export function OrderEditModal({
     district: order.district,
     upazila: order.upazila,
   });
+  // ShopBase-forward mode: the location block is often OFF so the order has
+  // no district (push would fall back to "Dhaka"). Pre-fill a guess from the
+  // typed address — the admin verifies/corrects before sending.
+  useEffect(() => {
+    if (mode !== "shopbase" || location.district) return;
+    let alive = true;
+    fetch("/data/bd-geo.json", { cache: "force-cache" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive || !d) return;
+        const g = guessLocationFromAddress(address, d as BdDivision[]);
+        if (g?.district) {
+          setLocation({ division: g.division, district: g.district, upazila: g.upazila });
+        }
+      })
+      .catch(() => {
+        // pre-fill is best-effort — admin picks manually
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -239,8 +263,12 @@ export function OrderEditModal({
             <Label>ঠিকানা *</Label>
             <Textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={2} className="mt-1.5 rounded-xl border-border" />
           </div>
-          {locationEnabled && (
-            <AddressCascade value={location} onChange={setLocation} title="এলাকা" />
+          {(locationEnabled || mode === "shopbase") && (
+            <AddressCascade
+              value={location}
+              onChange={setLocation}
+              title={mode === "shopbase" ? "এলাকা (ShopBase-এ যাবে — যাচাই করুন)" : "এলাকা"}
+            />
           )}
           {storedSplit.newLines.length > 0 && (
             <div className="rounded-2xl border border-border bg-cream/60 p-3.5">
