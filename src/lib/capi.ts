@@ -3,10 +3,26 @@ import type { PixelConfig } from "@/lib/pixel-shared";
 
 export type CapiResult = { ok: true } | { ok: false; error: string };
 
+/** SHA-256 hex of a normalized PII value (Meta rule: trim + lowercase, then hash). */
+function hashPii(raw: string): string {
+  return createHash("sha256").update(raw.trim().toLowerCase()).digest("hex");
+}
+
 /** SHA-256 hex of normalized phone (Meta requires hashed PII). */
 function hashPhone(phone: string): string {
   const normalized = `88${phone.replace(/\D/g, "").replace(/^88/, "")}`.toLowerCase();
   return createHash("sha256").update(normalized).digest("hex");
+}
+
+/**
+ * Split "আয়েশা সিদ্দিকা" → ["আয়েশা", "সিদ্দিকা"].
+ * Single word → [word, ""] (ln omitted — Meta prefers that over a duplicate).
+ */
+function splitName(name: string): [string, string] {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return ["", ""];
+  if (parts.length === 1) return [parts[0], ""];
+  return [parts[0], parts.slice(1).join(" ")];
 }
 
 /**
@@ -21,6 +37,16 @@ export async function sendPurchaseCapi(
     orderCode: string;
     totalPrice: number;
     phone: string;
+    /** Customer name → fn + ln (hashed). */
+    name?: string;
+    /** District → ct (hashed). */
+    city?: string;
+    /** Division → st (hashed). */
+    state?: string;
+    /** Raw _fbp cookie value (never hashed — Meta rule). */
+    fbp?: string;
+    /** Raw _fbc cookie value (never hashed — Meta rule). */
+    fbc?: string;
     clientIp: string;
     userAgent: string;
     /** Variant SKUs in this order (goes to content_ids + contents). */
@@ -29,6 +55,24 @@ export async function sendPurchaseCapi(
 ): Promise<CapiResult> {
   try {
     const skus = [...new Set((order.skus ?? []).filter(Boolean))];
+    // user_data: every extra matched parameter lifts Event Match Quality.
+    // PII is SHA-256 hashed; fbp/fbc + IP/UA go raw (Meta rule).
+    // All orders are Bangladesh COD → country is always "bd".
+    const phoneHash = hashPhone(order.phone);
+    const [firstName, lastName] = splitName(order.name ?? "");
+    const userData: Record<string, unknown> = {
+      ph: [phoneHash],
+      external_id: [phoneHash],
+      country: [hashPii("bd")],
+    };
+    if (firstName) userData.fn = [hashPii(firstName)];
+    if (lastName) userData.ln = [hashPii(lastName)];
+    if (order.city?.trim()) userData.ct = [hashPii(order.city)];
+    if (order.state?.trim()) userData.st = [hashPii(order.state)];
+    if (order.fbp?.trim()) userData.fbp = order.fbp.trim();
+    if (order.fbc?.trim()) userData.fbc = order.fbc.trim();
+    if (order.clientIp.trim()) userData.client_ip_address = order.clientIp.trim();
+    if (order.userAgent.trim()) userData.client_user_agent = order.userAgent;
     const payload: Record<string, unknown> = {
       data: [
         {
@@ -36,11 +80,7 @@ export async function sendPurchaseCapi(
           event_time: Math.floor(Date.now() / 1000),
           event_id: order.orderCode,
           action_source: "website",
-          user_data: {
-            ph: [hashPhone(order.phone)],
-            client_ip_address: order.clientIp,
-            client_user_agent: order.userAgent,
-          },
+          user_data: userData,
           custom_data: {
             value: order.totalPrice,
             currency: "BDT",

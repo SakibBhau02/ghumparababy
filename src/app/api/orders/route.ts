@@ -296,6 +296,14 @@ export async function POST(req: NextRequest) {
           orderCode: order.orderCode,
           totalPrice: order.totalPrice,
           phone: order.phone,
+          // Extra user_data lifts Meta Event Match Quality (backend-only —
+          // the order form itself is untouched). fbp/fbc ride along on the
+          // same-origin POST, so the server can read the browser cookies.
+          name,
+          city: location.district || undefined,
+          state: location.division || undefined,
+          fbp: req.cookies.get("_fbp")?.value,
+          fbc: req.cookies.get("_fbc")?.value,
           clientIp: fwd.split(",")[0].trim(),
           userAgent: req.headers.get("user-agent") ?? "",
           skus: orderTrackingSkus(
