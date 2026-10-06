@@ -10,6 +10,7 @@ import {
   type FraudCheckResult,
   type FraudConfig,
   type FraudSource,
+  type ZoolyumSummary,
 } from "@/lib/fraud-shared";
 
 export const FRAUD_SETTING_KEY = "fraud_config";
@@ -841,15 +842,160 @@ async function checkFraudbd(
 }
 
 // ---------------------------------------------------------------------------
+// Zoolyum — third-party fraud-checker API (single call, per-courier breakdown)
+// Docs: https://fraud-checker-one.vercel.app/api-docs
+// POST {base}/api/v1/check  { phone, fresh? }  +  x-api-key: fk_...
+// ---------------------------------------------------------------------------
+
+const ZOOLYUM_BASE = "https://fraud-checker-one.vercel.app";
+const ZOOLYUM_TIMEOUT_MS = 30000;
+
+/** Raw Zoolyum API body (all fields optional — their crash pages aren't JSON at all). */
+type ZoolyumApiBody = {
+  total?: unknown;
+  delivered?: unknown;
+  cancelled?: unknown;
+  successRate?: unknown;
+  riskLevel?: unknown;
+  labelBn?: unknown;
+  recommendation?: unknown;
+  message?: unknown;
+  error?: unknown;
+  couriers?: unknown;
+  partial?: unknown;
+  cached?: unknown;
+  checkedAt?: unknown;
+};
+
+const ZOOLYUM_COURIER_MAP: Record<string, CourierId> = {
+  steadfast: "steadfast",
+  pathao: "pathao",
+  redx: "redx",
+  paperfly: "paperfly",
+  carrybee: "carrybee",
+  // common variants seen in aggregator payloads
+  "stead fast": "steadfast",
+  "red x": "redx",
+  "red-x": "redx",
+  "paper fly": "paperfly",
+};
+
+async function checkZoolyum(
+  apiKey: string,
+  phone: string,
+  fresh = false
+): Promise<{
+  results: Partial<Record<CourierId, CourierFraudResult>>;
+  summary: ZoolyumSummary | null;
+  error: string | null;
+}> {
+  const call = async (): Promise<Response> =>
+    fetchTimeout(
+      `${ZOOLYUM_BASE}/api/v1/check`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+        body: JSON.stringify({ phone, ...(fresh ? { fresh: true } : {}) }),
+      },
+      ZOOLYUM_TIMEOUT_MS
+    );
+  try {
+    let res = await call();
+    // One retry on transient upstream timeouts (their docs: 502/504 → retry).
+    // No retry on 401/400/500 — those won't heal on an immediate second hit.
+    if (res.status === 502 || res.status === 504) {
+      await new Promise((r) => setTimeout(r, 2000));
+      res = await call();
+    }
+    let obj: ZoolyumApiBody | null = null;
+    // NOTE: body is read as text first — when their server crashes (e.g. a
+    // Vercel middleware 500 page) the body isn't JSON at all.
+    try {
+      const bodyText = await res.text();
+      if (bodyText.trim()) obj = JSON.parse(bodyText) as ZoolyumApiBody;
+    } catch {
+      obj = null;
+    }
+    // Provider-sent message (when they bother to include one).
+    const providerMsg =
+      obj && (typeof obj.message === "string" || typeof obj.error === "string")
+        ? String(obj.message ?? obj.error).slice(0, 160)
+        : "";
+    if (res.status === 401) return { results: {}, summary: null, error: "Zoolyum API key ভুল/বাতিল (সেটিংসে key যাচাই করুন)" };
+    if (res.status === 400) return { results: {}, summary: null, error: "Zoolyum: নম্বর ফরম্যাট সঠিক নয়" };
+    if (!res.ok || !obj || typeof obj !== "object") {
+      // 5xx with a non-JSON body (their crash page) = their server is down,
+      // not our request. Say so plainly instead of a bare "(500)".
+      if (res.status >= 500) {
+        return {
+          results: {},
+          summary: null,
+          error: `Zoolyum সার্ভার ডাউন (HTTP ${res.status}) — ওদের দিকে সমস্যা, কিছুক্ষণ পর Fresh দিয়ে আবার চেষ্টা করুন${providerMsg ? ` (${providerMsg})` : ""}`,
+        };
+      }
+      return {
+        results: {},
+        summary: null,
+        error: `Zoolyum সংযোগ ব্যর্থ (${res.status})${providerMsg ? ` — ${providerMsg}` : ""}`,
+      };
+    }
+    const asNum = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : Number(v) || 0);
+    const results: Partial<Record<CourierId, CourierFraudResult>> = {};
+    if (Array.isArray(obj.couriers)) {
+      for (const entry of obj.couriers) {
+        if (!entry || typeof entry !== "object") continue;
+        const e = entry as Record<string, unknown>;
+        const id = ZOOLYUM_COURIER_MAP[String(e.id ?? "").toLowerCase().trim()];
+        if (!id || results[id]) continue;
+        const delivered = asNum(e.delivered);
+        const cancelled = asNum(e.cancelled);
+        const total = asNum(e.total) || delivered + cancelled;
+        const rate = Number(e.rate);
+        results[id] = {
+          delivered,
+          cancelled,
+          total,
+          successRatio: total > 0 && Number.isFinite(rate) ? rate : ratio(delivered, total),
+        };
+      }
+    }
+    const riskLevel = typeof obj.riskLevel === "string" ? obj.riskLevel : "";
+    const summary: ZoolyumSummary = {
+      riskLevel:
+        riskLevel === "safe" || riskLevel === "moderate" || riskLevel === "high_risk"
+          ? riskLevel
+          : "moderate",
+      labelBn: typeof obj.labelBn === "string" ? obj.labelBn : "",
+      recommendation: typeof obj.recommendation === "string" ? obj.recommendation : "",
+      successRate: asNum(obj.successRate),
+      total: asNum(obj.total),
+      delivered: asNum(obj.delivered),
+      cancelled: asNum(obj.cancelled),
+      partial: obj.partial === true,
+      cached: obj.cached === true,
+      checkedAt: typeof obj.checkedAt === "string" ? obj.checkedAt : new Date().toISOString(),
+    };
+    return { results, summary, error: null };
+  } catch {
+    return { results: {}, summary: null, error: "Zoolyum সংযোগ ব্যর্থ" };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Orchestration — direct primary, FraudBD fills gaps (hybrid)
 // ---------------------------------------------------------------------------
 
 /** Run fraud check across all configured couriers for a phone number. */
-export async function checkFraud(config: FraudConfig, phone: string): Promise<FraudCheckResult> {
+export async function checkFraud(
+  config: FraudConfig,
+  phone: string,
+  opts?: { fresh?: boolean }
+): Promise<FraudCheckResult> {
   const clean = normalizeBdPhone(phone);
   const courierResults: Partial<Record<CourierId, CourierFraudResult>> = {};
   const errors: Partial<Record<CourierId, string>> = {};
   const sources: Partial<Record<CourierId, FraudSource>> = {};
+  let zoolyumSummary: ZoolyumSummary | null = null;
 
   const activeCouriers = ALL_COURIER_IDS.filter(
     (id) => config.credentials[id]?.user && config.credentials[id]?.password
@@ -871,6 +1017,27 @@ export async function checkFraud(config: FraudConfig, phone: string): Promise<Fr
     } else {
       courierResults[r.value.id] = r.value.result;
       sources[r.value.id] = "direct";
+    }
+  }
+
+  // Zoolyum API: fills couriers that have no direct result (missing creds or failed).
+  if (config.zoolyumEnabled && config.zoolyumApiKey) {
+    const missing = ALL_COURIER_IDS.filter((id) => !courierResults[id]);
+    // Always call when something is missing; the summary (risk/recommendation)
+    // is attached whenever the call succeeds.
+    if (missing.length > 0) {
+      const zy = await checkZoolyum(config.zoolyumApiKey, clean, opts?.fresh === true);
+      if (zy.summary) zoolyumSummary = zy.summary;
+      for (const id of missing) {
+        const mapped = zy.results[id];
+        if (mapped && (mapped.total > 0 || mapped.customerRating)) {
+          courierResults[id] = mapped;
+          sources[id] = "zoolyum";
+          delete errors[id];
+        } else if (!errors[id] && zy.error) {
+          errors[id] = zy.error;
+        }
+      }
     }
   }
 
@@ -908,6 +1075,7 @@ export async function checkFraud(config: FraudConfig, phone: string): Promise<Fr
     checkedAt: new Date().toISOString(),
     errors,
     sources,
+    zoolyum: zoolyumSummary,
   };
 }
 
@@ -952,7 +1120,7 @@ export async function checkFraudCached(
     const cached = await getFraudCache(phone);
     if (cached) return cached;
   }
-  const result = await checkFraud(config, phone);
+  const result = await checkFraud(config, phone, opts);
   await saveFraudCache(result);
   return result;
 }

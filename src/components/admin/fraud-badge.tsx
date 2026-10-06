@@ -7,6 +7,7 @@ import {
   COURIER_META,
   PATHAO_RATING_LABEL,
   RISK_META,
+  mapZoolyumRiskLevel,
   riskLevel,
 } from "@/lib/fraud-shared";
 import { toBn } from "@/lib/landing-data";
@@ -78,6 +79,9 @@ export function FraudResultDetails({
   const srcs = sources ?? result.sources ?? {};
   const steadfast = result.couriers.steadfast;
   const showFrauds = (steadfast?.frauds?.length ?? 0) > 0;
+  const zy = result.zoolyum ?? null;
+  const zyRisk = (zy && mapZoolyumRiskLevel(zy.riskLevel)) || risk;
+  const zyMeta = RISK_META[zyRisk];
 
   return (
     <div className="space-y-2">
@@ -96,6 +100,26 @@ export function FraudResultDetails({
           </div>
         </div>
       </div>
+
+      {/* Zoolyum verdict (risk level + recommendation from the API) */}
+      {zy && (
+        <div className={`rounded-xl border p-3 ${zyMeta.badge}`}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{zyMeta.emoji}</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-bold">
+                {zy.labelBn || zyMeta.label} — সফলতা {toBn(zy.successRate)}%
+              </div>
+              {zy.recommendation && (
+                <div className="mt-0.5 text-xs opacity-80">{zy.recommendation}</div>
+              )}
+            </div>
+            <span className="shrink-0 rounded-full border border-current px-2 py-0.5 text-[10px] font-bold opacity-70">
+              Zoolyum
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Per-courier */}
       {Object.entries(result.couriers).map(([id, c]) => {
@@ -119,6 +143,14 @@ export function FraudResultDetails({
                   className="rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700"
                 >
                   FraudBD
+                </span>
+              )}
+              {src === "zoolyum" && (
+                <span
+                  title="Merchant login নয় — Zoolyum API থেকে আনা"
+                  className="rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700"
+                >
+                  Zoolyum
                 </span>
               )}
             </span>

@@ -46,7 +46,35 @@ export type CourierFraudResult = {
   fraudCount?: number;
 };
 
-export type FraudSource = "direct" | "fraudbd";
+export type FraudSource = "direct" | "fraudbd" | "zoolyum";
+
+/** Zoolyum fraud-checker API summary (POST /api/v1/check). */
+export type ZoolyumSummary = {
+  riskLevel: "safe" | "moderate" | "high_risk";
+  labelBn: string;
+  recommendation: string;
+  successRate: number;
+  total: number;
+  delivered: number;
+  cancelled: number;
+  partial: boolean;
+  cached: boolean;
+  checkedAt: string;
+};
+
+/** Zoolyum riskLevel → local coarse risk (drives badges). */
+export function mapZoolyumRiskLevel(risk: string | null | undefined): "low" | "medium" | "high" | null {
+  switch ((risk ?? "").toLowerCase()) {
+    case "safe":
+      return "low";
+    case "moderate":
+      return "medium";
+    case "high_risk":
+      return "high";
+    default:
+      return null;
+  }
+}
 
 export type FraudCheckResult = {
   phone: string;
@@ -62,6 +90,8 @@ export type FraudCheckResult = {
   errors?: Partial<Record<CourierId, string>>;
   /** Where each courier's data came from (merchant login vs FraudBD API). */
   sources?: Partial<Record<CourierId, FraudSource>>;
+  /** Zoolyum API summary (risk level + recommendation) when that source ran. */
+  zoolyum?: ZoolyumSummary | null;
 };
 
 export type FraudConfig = {
@@ -74,6 +104,10 @@ export type FraudConfig = {
   fraudbdFallback: boolean;
   /** Hit FraudBD sandbox endpoints (for testing with the sandbox key). */
   fraudbdSandbox: boolean;
+  /** Zoolyum fraud-checker API key (fk_...) — fills couriers missing direct results. */
+  zoolyumApiKey: string;
+  /** Use the Zoolyum API as a fraud data source. */
+  zoolyumEnabled: boolean;
 };
 
 export const COURIER_META: Record<CourierId, { label: string; color: string; requires: string }> = {
@@ -113,6 +147,8 @@ export const DEFAULT_FRAUD_CONFIG: FraudConfig = {
   fraudbdApiKey: "",
   fraudbdFallback: false,
   fraudbdSandbox: false,
+  zoolyumApiKey: "",
+  zoolyumEnabled: false,
 };
 
 /** BD phone regex: 01[3-9]XXXXXXXX */
@@ -199,6 +235,8 @@ export function sanitizeFraudConfig(raw: unknown): FraudConfig | null {
     fraudbdApiKey: typeof rec.fraudbdApiKey === "string" ? rec.fraudbdApiKey.trim().slice(0, 256) : "",
     fraudbdFallback: rec.fraudbdFallback === true,
     fraudbdSandbox: rec.fraudbdSandbox === true,
+    zoolyumApiKey: typeof rec.zoolyumApiKey === "string" ? rec.zoolyumApiKey.trim().slice(0, 256) : "",
+    zoolyumEnabled: rec.zoolyumEnabled === true,
   };
 }
 
@@ -206,5 +244,6 @@ export function sanitizeFraudConfig(raw: unknown): FraudConfig | null {
  *  `enabled` only gates auto-check; manual check works whenever creds/key exist. */
 export function isFraudReady(config: FraudConfig): boolean {
   if (Object.keys(config.credentials).length > 0) return true;
-  return config.fraudbdApiKey.length > 0;
+  if (config.fraudbdApiKey.length > 0) return true;
+  return config.zoolyumApiKey.length > 0;
 }

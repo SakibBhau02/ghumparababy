@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const config = await getFraudConfig();
   if (!isFraudReady(config)) {
     return NextResponse.json(
-      { error: "আগে Settings-এ fraud checker credentials বা FraudBD API key সেভ করুন।" },
+      { error: "আগে Settings-এ fraud checker সেটআপ করুন (courier login / FraudBD key / Zoolyum key)।" },
       { status: 400 }
     );
   }
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   const config = await getFraudConfig();
   if (!isFraudReady(config)) {
     return NextResponse.json(
-      { error: "আগে Settings-এ fraud checker credentials বা FraudBD API key সেভ করুন।" },
+      { error: "আগে Settings-এ fraud checker সেটআপ করুন (courier login / FraudBD key / Zoolyum key)।" },
       { status: 400 }
     );
   }

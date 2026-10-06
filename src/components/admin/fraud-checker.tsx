@@ -100,7 +100,7 @@ export function FraudChecker({ initialConfig }: { initialConfig: FraudConfig }) 
             <div>
               <div className="font-bold text-ink">
                 {config.enabled
-                  ? `Fraud Checker চালু ✓ — ${toBn(credCount)}টি কুরিয়ার কনফিগার্ড${config.fraudbdFallback && config.fraudbdApiKey ? " + FraudBD ব্যাকআপ" : ""}`
+                  ? `Fraud Checker চালু ✓ — ${toBn(credCount)}টি কুরিয়ার কনফিগার্ড${config.fraudbdFallback && config.fraudbdApiKey ? " + FraudBD ব্যাকআপ" : ""}${config.zoolyumEnabled && config.zoolyumApiKey ? " + Zoolyum" : ""}`
                   : "Fraud Checker বন্ধ আছে"}
               </div>
               <div className="mt-1 text-sm text-muted-foreground">
@@ -277,11 +277,57 @@ export function FraudChecker({ initialConfig }: { initialConfig: FraudConfig }) 
         </div>
       </section>
 
-      {/* Phone Check */}
+      {/* Zoolyum API */}
       <section className="rounded-2xl border border-border bg-white p-5 shadow-sm">
         <div className="flex items-start gap-3">
           <div className="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-sm font-bold text-white">
             ৩
+          </div>
+          <div>
+            <h2 className="font-bold text-ink">Zoolyum Fraud API (এক কলে সব কুরিয়ার)</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              fraud-checker-one থেকে API key (`fk_...`) বসান — merchant login ছাড়াই
+              ফোন নম্বরের courier history (total/delivered/cancelled + risk level) আসবে।
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-col gap-3">
+          <input
+            value={config.zoolyumApiKey}
+            onChange={(e) => setConfig((c) => ({ ...c, zoolyumApiKey: e.target.value }))}
+            placeholder="Zoolyum API key (fk_...)"
+            autoComplete="off"
+            className="h-10 w-full rounded-xl border border-border bg-cream/60 px-4 font-mono text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-cream/50 p-3.5">
+              <div className="text-sm font-semibold text-ink">Zoolyum API {config.zoolyumEnabled ? "চালু" : "বন্ধ"}</div>
+              <Switch
+                checked={config.zoolyumEnabled}
+                onCheckedChange={(v) => setConfig((c) => ({ ...c, zoolyumEnabled: v }))}
+              />
+            </div>
+            <Button
+              onClick={save}
+              disabled={saving}
+              className="rounded-full bg-brand font-bold text-white hover:bg-brand-deep disabled:opacity-60"
+            >
+              {saving ? (
+                <Loader2 className="mr-1.5 size-4 animate-spin" />
+              ) : (
+                <Save className="mr-1.5 size-4" />
+              )}
+              সেভ করুন
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* Phone Check */}
+      <section className="rounded-2xl border border-border bg-white p-5 shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-sm font-bold text-white">
+            ৪
           </div>
           <div className="flex-1">
             <h2 className="font-bold text-ink">ফোন নম্বর চেক করুন</h2>
